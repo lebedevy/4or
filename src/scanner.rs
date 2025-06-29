@@ -23,7 +23,7 @@ impl Scanner {
     // TODO: return a result
     pub fn scan_tokens(&mut self) -> Vec<Token> {
         let mut tokens = vec![];
-        let mut iter = self.content.chars().peekable().enumerate();
+        let mut iter = self.content.chars().enumerate().peekable();
         loop {
             self.start = self.current; // TODO: Clean up
             let token = Token::read_next(&mut iter);

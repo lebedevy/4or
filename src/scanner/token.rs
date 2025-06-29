@@ -64,7 +64,7 @@ pub(crate) struct Token {
     token_type: TokenType,
 }
 
-type I<'a> = Enumerate<Peekable<Chars<'a>>>;
+type I<'a> = Peekable<Enumerate<Chars<'a>>>;
 
 impl Token {
     pub(super) fn read_next(iter: &mut I) -> Result<Self, TokenError> {
@@ -84,13 +84,21 @@ enum TokenTypeError {
 impl fmt::Display for TokenTypeError {
     // TODO: Write out the offending character
     fn fmt<'a>(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Not a valid token")
+        write!(
+            f,
+            "{}",
+            match self {
+                TokenTypeError::InvalidToken(char, ind) =>
+                    format!("Token {} at postion {} is not a valid token", char, ind),
+                TokenTypeError::EmptyIterator => "Attempting to read empty iterator".into(),
+            }
+        )
     }
 }
 
 impl TokenType {
-    fn from(c: &mut I) -> Result<TokenType, TokenTypeError> {
-        match c.next() {
+    fn from(iter: &mut I) -> Result<TokenType, TokenTypeError> {
+        match iter.next() {
             Some((ind, c)) => match c {
                 '(' => Ok(Self::LeftParen),
                 ')' => Ok(Self::RightParen),
@@ -102,9 +110,25 @@ impl TokenType {
                 '+' => Ok(Self::Plus),
                 ';' => Ok(Self::Semicolon),
                 '*' => Ok(Self::Star),
+                // Potentially compound tokens
+                '!' if TokenType::match_next_token(iter, &'=') => Ok(Self::BangEqual),
+                '!' => Ok(Self::Bang),
+                '=' if TokenType::match_next_token(iter, &'=') => Ok(Self::EqualEqual),
+                '=' => Ok(Self::Equal),
+                '<' if TokenType::match_next_token(iter, &'=') => Ok(Self::LessEqual),
+                '<' => Ok(Self::Less),
+                '>' if TokenType::match_next_token(iter, &'=') => Ok(Self::GreaterEqual),
+                '>' => Ok(Self::Greater),
                 _ => Err(TokenTypeError::InvalidToken(c, ind)),
             },
             None => Err(TokenTypeError::EmptyIterator),
+        }
+    }
+
+    fn match_next_token(iter: &mut I, next: &char) -> bool {
+        match iter.peek() {
+            Some((_ind, ch)) => ch == next,
+            None => false,
         }
     }
 }
