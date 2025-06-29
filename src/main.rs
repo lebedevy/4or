@@ -4,6 +4,10 @@ use std::{
     process::exit,
 };
 
+use scanner::Scanner;
+
+mod scanner;
+
 fn main() {
     // Skip the first argument which is tradtionally the path to the executable
     let args: Vec<String> = env::args().skip(1).collect();
@@ -12,7 +16,7 @@ fn main() {
 
     match &args.len() {
         0 => run_prompt(),
-        1 if !args[0].is_empty() => run_file(&args[0]),
+        1 => run_file(&args[0]),
         _ => {
             println!("Usage: four [script]");
             exit(64);
@@ -46,5 +50,13 @@ fn run_file(path: &String) {
 }
 
 fn run(content: String) {
-    println!("> {content}")
+    println!("> {content}");
+
+    let mut scanner = Scanner::new(content);
+
+    let tokens = scanner.scan_tokens();
+
+    for token in tokens {
+        println!("{token:?}");
+    }
 }
