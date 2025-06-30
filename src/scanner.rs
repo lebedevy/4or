@@ -27,10 +27,14 @@ impl Scanner {
         loop {
             self.start = self.current; // TODO: Clean up
             let token = Token::read_next(&mut iter);
-            match token {
-                Ok(token) => tokens.push(token),
-                Err(_) => todo!(),
+
+            // TODO: Handle error
+            if let Ok(token) = token {
+                if let Some(token) = token {
+                    tokens.push(token);
+                }
             }
+
             break;
         }
 
