@@ -1,6 +1,7 @@
 use core::fmt;
 use std::{
     iter::{Enumerate, Peekable},
+    num::ParseFloatError,
     str::Chars,
 };
 
@@ -32,7 +33,7 @@ enum TokenType {
     // Literals.
     Identifier,
     String(String),
-    Number,
+    Number(f64), // this can be optimized with different num types
 
     // Keywords.
     And,
@@ -55,6 +56,7 @@ enum TokenType {
     EOF,
 }
 
+#[derive(Debug)]
 pub(super) enum TokenError {
     TokenTypeError(TokenTypeError),
 }
@@ -83,6 +85,13 @@ enum TokenTypeError {
     InvalidToken(char, usize),
     EmptyIterator,
     UnterminatedString(usize),
+    InvalidNumber(ParseFloatError),
+}
+
+impl From<ParseFloatError> for TokenTypeError {
+    fn from(value: ParseFloatError) -> Self {
+        TokenTypeError::InvalidNumber(value)
+    }
 }
 
 impl fmt::Display for TokenTypeError {
@@ -97,6 +106,8 @@ impl fmt::Display for TokenTypeError {
                 TokenTypeError::EmptyIterator => "Attempting to read empty iterator".into(),
                 TokenTypeError::UnterminatedString(ind) =>
                     format!("String starting at {} is not terminated", ind),
+                TokenTypeError::InvalidNumber(parse_float_error) =>
+                    format!("Invalid number: {}", parse_float_error),
             }
         )
     }
@@ -136,6 +147,8 @@ impl TokenType {
                 // ignored chars
                 // TODO: Increment on line on new line
                 ' ' | '\r' | '\t' | '\n' => None,
+                // Numbers
+                c if c.is_digit(10) => Some(Self::Number(TokenType::consume_number(iter, c)?)),
                 _ => {
                     return Err(TokenTypeError::InvalidToken(c, ind));
                 }
@@ -162,6 +175,18 @@ impl TokenType {
                 break;
             };
         }
+    }
+
+    fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenTypeError> {
+        let mut text = String::from(start);
+
+        while matches!(iter.peek(), Some((_ind, ch)) if ch.is_digit(10)) {
+            if let Some((_ind, digit)) = iter.next() {
+                text.push(digit);
+            }
+        }
+
+        Ok(text.parse()?)
     }
 
     fn consume_string(iter: &mut I, start: usize) -> Result<String, TokenTypeError> {
