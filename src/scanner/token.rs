@@ -114,12 +114,7 @@ impl Token {
     }
 
     fn consume_comment(iter: &mut I) {
-        while let Some((_ind, ch)) = iter.next() {
-            // compound conditionals with let are unstable; do this check inside the body instead
-            if ch == '\n' {
-                break;
-            };
-        }
+        while iter.next_if(|(_ind, ch)| ch != &'\n').is_some() {}
     }
 
     fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenError> {
@@ -146,5 +141,86 @@ impl Token {
         // if we are here, we have read the whole iterator and never reached the closing tag for
         // the string
         Err(TokenError::UnterminatedString(start))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn get_iter(content: &'static str) -> I<'static> {
+        content.chars().enumerate().peekable()
+    }
+
+    #[test]
+    fn consume_string_returns_content() -> Result<(), TokenError> {
+        let value = "test\"";
+        let mut iter = get_iter(value);
+
+        let token = Token::consume_string(&mut iter, 0)?;
+        assert_eq!(token, "test");
+        Ok(())
+    }
+
+    #[test]
+    fn consume_string_unterminated_string_returns_error() {
+        let value = "test";
+        let start = 0;
+        let mut iter = get_iter(value);
+
+        let token = Token::consume_string(&mut iter, start);
+        assert!(token.is_err_and(|e| {
+            match e {
+                TokenError::UnterminatedString(ind) => ind == start,
+                _ => false,
+            }
+        }));
+    }
+
+    #[test]
+    fn match_next_token_returns_true() {
+        assert!(Token::match_next_token(&mut get_iter("="), &'='));
+    }
+
+    #[test]
+    fn match_next_token_no_match_returns_false() {
+        assert!(!Token::match_next_token(&mut get_iter("-"), &'='));
+    }
+
+    #[test]
+    fn match_next_token_empty_returns_false() {
+        assert!(!Token::match_next_token(&mut get_iter(""), &'='));
+    }
+
+    #[test]
+    fn consume_comment_reads_whole_line() {
+        let mut iter = get_iter("/ some comment");
+        Token::consume_comment(&mut iter);
+        assert!(iter.peek().is_none())
+    }
+
+    #[test]
+    fn consume_comment_only_reads_current_line() {
+        let mut iter = get_iter("/ some comment\nlet g = 123;");
+        Token::consume_comment(&mut iter);
+        assert!(!iter.peek().is_none())
+    }
+
+    #[test]
+    fn consume_number() -> Result<(), TokenError> {
+        // the first digit is consumed in the iterator
+        let mut iter = get_iter("23123");
+        let num = Token::consume_number(&mut iter, '1')?;
+        assert_eq!(num, 123123.0);
+        Ok(())
+    }
+
+    #[test]
+    fn consume_decimal_number() -> Result<(), TokenError> {
+        // the first digit is consumed in the iterator
+        let mut iter = get_iter("23.123");
+        let num = Token::consume_number(&mut iter, '1')?;
+        assert_eq!(num, 123.123);
+        Ok(())
     }
 }
