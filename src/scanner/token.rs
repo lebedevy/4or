@@ -58,7 +58,10 @@ enum TokenType {
 
 #[derive(Debug)]
 pub(super) enum TokenError {
-    TokenTypeError(TokenTypeError),
+    InvalidToken(char, usize),
+    EmptyIterator,
+    UnterminatedString(usize),
+    InvalidNumber(ParseFloatError),
 }
 
 #[derive(Debug)]
@@ -70,43 +73,34 @@ type I<'a> = Peekable<Enumerate<Chars<'a>>>;
 
 impl Token {
     pub(super) fn read_next(iter: &mut I) -> Result<Option<Self>, TokenError> {
-        match TokenType::from(iter) {
-            Ok(token) => match token {
-                Some(token_type) => Ok(Some(Self { token_type })),
-                None => Ok(None),
-            },
-            Err(err) => Err(TokenError::TokenTypeError(err)),
-        }
+        let token = TokenType::from(iter)?;
+
+        Ok(match token {
+            Some(token_type) => Some(Self { token_type }),
+            None => None,
+        })
     }
 }
 
-#[derive(Debug, Clone)]
-enum TokenTypeError {
-    InvalidToken(char, usize),
-    EmptyIterator,
-    UnterminatedString(usize),
-    InvalidNumber(ParseFloatError),
-}
-
-impl From<ParseFloatError> for TokenTypeError {
+impl From<ParseFloatError> for TokenError {
     fn from(value: ParseFloatError) -> Self {
-        TokenTypeError::InvalidNumber(value)
+        TokenError::InvalidNumber(value)
     }
 }
 
-impl fmt::Display for TokenTypeError {
+impl fmt::Display for TokenError {
     // TODO: Write out the offending character
     fn fmt<'a>(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                TokenTypeError::InvalidToken(char, ind) =>
+                TokenError::InvalidToken(char, ind) =>
                     format!("Token {} at postion {} is not a valid token", char, ind),
-                TokenTypeError::EmptyIterator => "Attempting to read empty iterator".into(),
-                TokenTypeError::UnterminatedString(ind) =>
+                TokenError::EmptyIterator => "Attempting to read empty iterator".into(),
+                TokenError::UnterminatedString(ind) =>
                     format!("String starting at {} is not terminated", ind),
-                TokenTypeError::InvalidNumber(parse_float_error) =>
+                TokenError::InvalidNumber(parse_float_error) =>
                     format!("Invalid number: {}", parse_float_error),
             }
         )
@@ -114,7 +108,7 @@ impl fmt::Display for TokenTypeError {
 }
 
 impl TokenType {
-    fn from(iter: &mut I) -> Result<Option<TokenType>, TokenTypeError> {
+    fn from(iter: &mut I) -> Result<Option<TokenType>, TokenError> {
         let token = match iter.next() {
             Some((ind, c)) => match c {
                 '(' => Some(Self::LeftParen),
@@ -150,11 +144,11 @@ impl TokenType {
                 // Numbers
                 c if c.is_digit(10) => Some(Self::Number(TokenType::consume_number(iter, c)?)),
                 _ => {
-                    return Err(TokenTypeError::InvalidToken(c, ind));
+                    return Err(TokenError::InvalidToken(c, ind));
                 }
             },
             None => {
-                return Err(TokenTypeError::EmptyIterator);
+                return Err(TokenError::EmptyIterator);
             }
         };
 
@@ -177,7 +171,7 @@ impl TokenType {
         }
     }
 
-    fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenTypeError> {
+    fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenError> {
         let mut text = String::from(start);
 
         while matches!(iter.peek(), Some((_ind, ch)) if ch.is_digit(10)) {
@@ -189,7 +183,7 @@ impl TokenType {
         Ok(text.parse()?)
     }
 
-    fn consume_string(iter: &mut I, start: usize) -> Result<String, TokenTypeError> {
+    fn consume_string(iter: &mut I, start: usize) -> Result<String, TokenError> {
         let mut text = String::new();
         while let Some((_ind, ch)) = iter.next() {
             match ch {
@@ -200,6 +194,6 @@ impl TokenType {
 
         // if we are here, we have read the whole iterator and never reached the closing tag for
         // the string
-        Err(TokenTypeError::UnterminatedString(start))
+        Err(TokenError::UnterminatedString(start))
     }
 }
