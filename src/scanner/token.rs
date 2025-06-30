@@ -73,16 +73,16 @@ impl Token {
                 ';' => Some(TokenType::Semicolon),
                 '*' => Some(TokenType::Star),
                 // Potentially compound tokens
-                '!' if Token::match_next_token(iter, &'=') => Some(TokenType::BangEqual),
+                '!' if Token::consume_if(iter, &'=') => Some(TokenType::BangEqual),
                 '!' => Some(TokenType::Bang),
-                '=' if Token::match_next_token(iter, &'=') => Some(TokenType::EqualEqual),
+                '=' if Token::consume_if(iter, &'=') => Some(TokenType::EqualEqual),
                 '=' => Some(TokenType::Equal),
-                '<' if Token::match_next_token(iter, &'=') => Some(TokenType::LessEqual),
+                '<' if Token::consume_if(iter, &'=') => Some(TokenType::LessEqual),
                 '<' => Some(TokenType::Less),
-                '>' if Token::match_next_token(iter, &'=') => Some(TokenType::GreaterEqual),
+                '>' if Token::consume_if(iter, &'=') => Some(TokenType::GreaterEqual),
                 '>' => Some(TokenType::Greater),
                 // division or comment
-                '/' if Token::match_next_token(iter, &'/') => {
+                '/' if Token::consume_if(iter, &'/') => {
                     Token::consume_comment(iter);
                     None
                 }
@@ -106,11 +106,8 @@ impl Token {
         Ok(token)
     }
 
-    fn match_next_token(iter: &mut I, next: &char) -> bool {
-        match iter.peek() {
-            Some((_ind, ch)) => ch == next,
-            None => false,
-        }
+    fn consume_if(iter: &mut I, next: &char) -> bool {
+        iter.next_if(|(_, ch)| ch == next).is_some()
     }
 
     fn consume_comment(iter: &mut I) {
@@ -120,10 +117,8 @@ impl Token {
     fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenError> {
         let mut text = String::from(start);
 
-        while matches!(iter.peek(), Some((_ind, ch)) if ch.is_digit(10)) {
-            if let Some((_ind, digit)) = iter.next() {
-                text.push(digit);
-            }
+        while let Some((_ind, digit)) = iter.next_if(|(_ind, ch)| ch.is_digit(10)) {
+            text.push(digit);
         }
 
         Ok(text.parse()?)
@@ -178,18 +173,25 @@ mod tests {
     }
 
     #[test]
-    fn match_next_token_returns_true() {
-        assert!(Token::match_next_token(&mut get_iter("="), &'='));
+    fn consume_if_on_match_returns_true() {
+        assert!(Token::consume_if(&mut get_iter("="), &'='));
     }
 
     #[test]
-    fn match_next_token_no_match_returns_false() {
-        assert!(!Token::match_next_token(&mut get_iter("-"), &'='));
+    fn consume_if_on_match_consumes_next_token() {
+        let mut iter = get_iter("=");
+        assert!(Token::consume_if(&mut iter, &'='));
+        assert!(iter.next().is_none());
     }
 
     #[test]
-    fn match_next_token_empty_returns_false() {
-        assert!(!Token::match_next_token(&mut get_iter(""), &'='));
+    fn consume_if_no_match_returns_false() {
+        assert!(!Token::consume_if(&mut get_iter("-"), &'='));
+    }
+
+    #[test]
+    fn consume_if_on_empty_returns_false() {
+        assert!(!Token::consume_if(&mut get_iter(""), &'='));
     }
 
     #[test]
