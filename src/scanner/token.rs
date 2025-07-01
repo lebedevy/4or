@@ -274,4 +274,187 @@ mod tests {
         assert_eq!(num, 123.123);
         Ok(())
     }
+
+    #[test]
+    fn from_left_paren() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("("))?;
+        assert_eq!(res, Some(TokenType::LeftParen));
+        Ok(())
+    }
+
+    #[test]
+    fn from_right_paren() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter(")"))?;
+        assert_eq!(res, Some(TokenType::RightParen));
+        Ok(())
+    }
+
+    #[test]
+    fn from_left_brace() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("{"))?;
+        assert_eq!(res, Some(TokenType::LeftBrace));
+        Ok(())
+    }
+
+    #[test]
+    fn from_right_brace() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("}"))?;
+        assert_eq!(res, Some(TokenType::RightBrace));
+        Ok(())
+    }
+
+    #[test]
+    fn from_comma() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter(","))?;
+        assert_eq!(res, Some(TokenType::Comma));
+        Ok(())
+    }
+
+    #[test]
+    fn from_dot() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("."))?;
+        assert_eq!(res, Some(TokenType::Dot));
+        Ok(())
+    }
+
+    #[test]
+    fn from_minus() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("-"))?;
+        assert_eq!(res, Some(TokenType::Minus));
+        Ok(())
+    }
+
+    #[test]
+    fn from_plus() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("+"))?;
+        assert_eq!(res, Some(TokenType::Plus));
+        Ok(())
+    }
+
+    #[test]
+    fn from_semicolon() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter(";"))?;
+        assert_eq!(res, Some(TokenType::Semicolon));
+        Ok(())
+    }
+
+    #[test]
+    fn from_star() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("*"))?;
+        assert_eq!(res, Some(TokenType::Star));
+        Ok(())
+    }
+
+    #[test]
+    fn from_bang_equal() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("!="))?;
+        assert_eq!(res, Some(TokenType::BangEqual));
+        Ok(())
+    }
+
+    #[test]
+    fn from_bang() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("!"))?;
+        assert_eq!(res, Some(TokenType::Bang));
+        Ok(())
+    }
+
+    #[test]
+    fn from_equal_equal() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("=="))?;
+        assert_eq!(res, Some(TokenType::EqualEqual));
+        Ok(())
+    }
+
+    #[test]
+    fn from_equal() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("="))?;
+        assert_eq!(res, Some(TokenType::Equal));
+        Ok(())
+    }
+
+    #[test]
+    fn from_less_equal() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("<="))?;
+        assert_eq!(res, Some(TokenType::LessEqual));
+        Ok(())
+    }
+
+    #[test]
+    fn from_less() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("<"))?;
+        assert_eq!(res, Some(TokenType::Less));
+        Ok(())
+    }
+
+    #[test]
+    fn from_greater_equal() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter(">="))?;
+        assert_eq!(res, Some(TokenType::GreaterEqual));
+        Ok(())
+    }
+
+    #[test]
+    fn from_greater() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter(">"))?;
+        dbg!(&res);
+        assert_eq!(res, Some(TokenType::Greater));
+        Ok(())
+    }
+
+    #[test]
+    fn from_comment() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("//"))?;
+        assert_eq!(res, None);
+        Ok(())
+    }
+
+    #[test]
+    fn from_slash() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("/"))?;
+        assert_eq!(res, Some(TokenType::Slash));
+        Ok(())
+    }
+
+    #[test]
+    fn from_string() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("\"test\""))?;
+        assert_eq!(res, Some(TokenType::String("test".to_string())));
+        Ok(())
+    }
+
+    #[test]
+    fn from_space() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter(" "))?;
+        assert_eq!(res, None);
+        Ok(())
+    }
+
+    #[test]
+    fn from_number() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("123.123"))?;
+        assert_eq!(res, Some(TokenType::Number(123.123)));
+        Ok(())
+    }
+
+    #[test]
+    fn from_return() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("\r"))?;
+        assert_eq!(res, None);
+        Ok(())
+    }
+
+    #[test]
+    fn from_tab() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("\t"))?;
+        assert_eq!(res, None);
+        Ok(())
+    }
+
+    #[test]
+    fn from_new_line() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("\n"))?;
+        assert_eq!(res, None);
+        Ok(())
+    }
 }

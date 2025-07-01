@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(super) enum TokenType {
     // Single-character tokens.
     LeftParen,
