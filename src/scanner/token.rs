@@ -7,7 +7,7 @@ use token_type::TokenType;
 mod token_type;
 
 #[derive(Debug)]
-pub(super) enum TokenError {
+pub(super) enum TokenParseError {
     InvalidToken(char, usize),
     EmptyIterator,
     UnterminatedString(usize),
@@ -21,25 +21,25 @@ pub(crate) struct Token {
 
 type I<'a> = MultiPeek<Enumerate<Chars<'a>>>;
 
-impl From<ParseFloatError> for TokenError {
+impl From<ParseFloatError> for TokenParseError {
     fn from(value: ParseFloatError) -> Self {
-        TokenError::InvalidNumber(value)
+        TokenParseError::InvalidNumber(value)
     }
 }
 
-impl fmt::Display for TokenError {
+impl fmt::Display for TokenParseError {
     // TODO: Write out the offending character
     fn fmt<'a>(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                TokenError::InvalidToken(char, ind) =>
+                TokenParseError::InvalidToken(char, ind) =>
                     format!("Token {} at postion {} is not a valid token", char, ind),
-                TokenError::EmptyIterator => "Attempting to read empty iterator".into(),
-                TokenError::UnterminatedString(ind) =>
+                TokenParseError::EmptyIterator => "Attempting to read empty iterator".into(),
+                TokenParseError::UnterminatedString(ind) =>
                     format!("String starting at {} is not terminated", ind),
-                TokenError::InvalidNumber(parse_float_error) =>
+                TokenParseError::InvalidNumber(parse_float_error) =>
                     format!("Invalid number: {}", parse_float_error),
             }
         )
@@ -47,7 +47,7 @@ impl fmt::Display for TokenError {
 }
 
 impl Token {
-    pub(super) fn read_next(iter: &mut I) -> Result<Option<Self>, TokenError> {
+    pub(super) fn read_next(iter: &mut I) -> Result<Option<Self>, TokenParseError> {
         let token = Token::from(iter)?;
 
         Ok(match token {
@@ -56,7 +56,7 @@ impl Token {
         })
     }
 
-    fn from(iter: &mut I) -> Result<Option<TokenType>, TokenError> {
+    fn from(iter: &mut I) -> Result<Option<TokenType>, TokenParseError> {
         let token = match iter.next() {
             Some((ind, c)) => match c {
                 '(' => Some(TokenType::LeftParen),
@@ -95,11 +95,11 @@ impl Token {
                 c if c.is_digit(10) => Some(TokenType::Number(Token::consume_number(iter, c)?)),
                 c if c.is_alphabetic() => Some(Token::consume_identifier(iter, c)),
                 _ => {
-                    return Err(TokenError::InvalidToken(c, ind));
+                    return Err(TokenParseError::InvalidToken(c, ind));
                 }
             },
             None => {
-                return Err(TokenError::EmptyIterator);
+                return Err(TokenParseError::EmptyIterator);
             }
         };
 
@@ -131,7 +131,7 @@ impl Token {
         while Token::next_if(iter, |_, ch| ch != &'\n').is_some() {}
     }
 
-    fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenError> {
+    fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenParseError> {
         let mut text = String::from(start);
 
         Token::consume_digits(iter, &mut text);
@@ -157,7 +157,7 @@ impl Token {
         }
     }
 
-    fn consume_string(iter: &mut I, start: usize) -> Result<String, TokenError> {
+    fn consume_string(iter: &mut I, start: usize) -> Result<String, TokenParseError> {
         let mut text = String::new();
         while let Some((_ind, ch)) = iter.next() {
             match ch {
@@ -168,7 +168,7 @@ impl Token {
 
         // if we are here, we have read the whole iterator and never reached the closing tag for
         // the string
-        Err(TokenError::UnterminatedString(start))
+        Err(TokenParseError::UnterminatedString(start))
     }
 
     fn consume_identifier(iter: &mut I, start: char) -> TokenType {
@@ -226,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_string_returns_content() -> Result<(), TokenError> {
+    fn consume_string_returns_content() -> Result<(), TokenParseError> {
         let value = "test\"";
         let mut iter = get_iter(value);
 
@@ -244,7 +244,7 @@ mod tests {
         let token = Token::consume_string(&mut iter, start);
         assert!(token.is_err_and(|e| {
             match e {
-                TokenError::UnterminatedString(ind) => ind == start,
+                TokenParseError::UnterminatedString(ind) => ind == start,
                 _ => false,
             }
         }));
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_number() -> Result<(), TokenError> {
+    fn consume_number() -> Result<(), TokenParseError> {
         // the first digit is consumed in the iterator
         let mut iter = get_iter("23123");
         let num = Token::consume_number(&mut iter, '1')?;
@@ -296,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_decimal_number() -> Result<(), TokenError> {
+    fn consume_decimal_number() -> Result<(), TokenParseError> {
         // the first digit is consumed in the iterator
         let mut iter = get_iter("23.123");
         let num = Token::consume_number(&mut iter, '1')?;
@@ -313,126 +313,126 @@ mod tests {
 
     // from tests
     #[test]
-    fn from_left_paren() -> Result<(), TokenError> {
+    fn from_left_paren() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("("))?;
         assert_eq!(res, Some(TokenType::LeftParen));
         Ok(())
     }
 
     #[test]
-    fn from_right_paren() -> Result<(), TokenError> {
+    fn from_right_paren() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(")"))?;
         assert_eq!(res, Some(TokenType::RightParen));
         Ok(())
     }
 
     #[test]
-    fn from_left_brace() -> Result<(), TokenError> {
+    fn from_left_brace() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("{"))?;
         assert_eq!(res, Some(TokenType::LeftBrace));
         Ok(())
     }
 
     #[test]
-    fn from_right_brace() -> Result<(), TokenError> {
+    fn from_right_brace() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("}"))?;
         assert_eq!(res, Some(TokenType::RightBrace));
         Ok(())
     }
 
     #[test]
-    fn from_comma() -> Result<(), TokenError> {
+    fn from_comma() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(","))?;
         assert_eq!(res, Some(TokenType::Comma));
         Ok(())
     }
 
     #[test]
-    fn from_dot() -> Result<(), TokenError> {
+    fn from_dot() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("."))?;
         assert_eq!(res, Some(TokenType::Dot));
         Ok(())
     }
 
     #[test]
-    fn from_minus() -> Result<(), TokenError> {
+    fn from_minus() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("-"))?;
         assert_eq!(res, Some(TokenType::Minus));
         Ok(())
     }
 
     #[test]
-    fn from_plus() -> Result<(), TokenError> {
+    fn from_plus() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("+"))?;
         assert_eq!(res, Some(TokenType::Plus));
         Ok(())
     }
 
     #[test]
-    fn from_semicolon() -> Result<(), TokenError> {
+    fn from_semicolon() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(";"))?;
         assert_eq!(res, Some(TokenType::Semicolon));
         Ok(())
     }
 
     #[test]
-    fn from_star() -> Result<(), TokenError> {
+    fn from_star() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("*"))?;
         assert_eq!(res, Some(TokenType::Star));
         Ok(())
     }
 
     #[test]
-    fn from_bang_equal() -> Result<(), TokenError> {
+    fn from_bang_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("!="))?;
         assert_eq!(res, Some(TokenType::BangEqual));
         Ok(())
     }
 
     #[test]
-    fn from_bang() -> Result<(), TokenError> {
+    fn from_bang() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("!"))?;
         assert_eq!(res, Some(TokenType::Bang));
         Ok(())
     }
 
     #[test]
-    fn from_equal_equal() -> Result<(), TokenError> {
+    fn from_equal_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("=="))?;
         assert_eq!(res, Some(TokenType::EqualEqual));
         Ok(())
     }
 
     #[test]
-    fn from_equal() -> Result<(), TokenError> {
+    fn from_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("="))?;
         assert_eq!(res, Some(TokenType::Equal));
         Ok(())
     }
 
     #[test]
-    fn from_less_equal() -> Result<(), TokenError> {
+    fn from_less_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("<="))?;
         assert_eq!(res, Some(TokenType::LessEqual));
         Ok(())
     }
 
     #[test]
-    fn from_less() -> Result<(), TokenError> {
+    fn from_less() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("<"))?;
         assert_eq!(res, Some(TokenType::Less));
         Ok(())
     }
 
     #[test]
-    fn from_greater_equal() -> Result<(), TokenError> {
+    fn from_greater_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(">="))?;
         assert_eq!(res, Some(TokenType::GreaterEqual));
         Ok(())
     }
 
     #[test]
-    fn from_greater() -> Result<(), TokenError> {
+    fn from_greater() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(">"))?;
         dbg!(&res);
         assert_eq!(res, Some(TokenType::Greater));
@@ -440,77 +440,77 @@ mod tests {
     }
 
     #[test]
-    fn from_comment() -> Result<(), TokenError> {
+    fn from_comment() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("//"))?;
         assert_eq!(res, None);
         Ok(())
     }
 
     #[test]
-    fn from_slash() -> Result<(), TokenError> {
+    fn from_slash() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("/"))?;
         assert_eq!(res, Some(TokenType::Slash));
         Ok(())
     }
 
     #[test]
-    fn from_string() -> Result<(), TokenError> {
+    fn from_string() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("\"test\""))?;
         assert_eq!(res, Some(TokenType::String("test".to_string())));
         Ok(())
     }
 
     #[test]
-    fn from_space() -> Result<(), TokenError> {
+    fn from_space() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(" "))?;
         assert_eq!(res, None);
         Ok(())
     }
 
     #[test]
-    fn from_number() -> Result<(), TokenError> {
+    fn from_number() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("123.123"))?;
         assert_eq!(res, Some(TokenType::Number(123.123)));
         Ok(())
     }
 
     #[test]
-    fn from_return() -> Result<(), TokenError> {
+    fn from_return() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("\r"))?;
         assert_eq!(res, None);
         Ok(())
     }
 
     #[test]
-    fn from_tab() -> Result<(), TokenError> {
+    fn from_tab() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("\t"))?;
         assert_eq!(res, None);
         Ok(())
     }
 
     #[test]
-    fn from_new_line() -> Result<(), TokenError> {
+    fn from_new_line() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("\n"))?;
         assert_eq!(res, None);
         Ok(())
     }
 
     #[test]
-    fn from_or() -> Result<(), TokenError> {
+    fn from_or() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("||"))?;
         assert_eq!(res, Some(TokenType::Or));
         Ok(())
     }
 
     #[test]
-    fn from_and() -> Result<(), TokenError> {
+    fn from_and() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("&&"))?;
         assert_eq!(res, Some(TokenType::And));
         Ok(())
     }
 
     #[test]
-    fn from_identifier() -> Result<(), TokenError> {
+    fn from_identifier() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("aa bb"))?;
         assert_eq!(res, Some(TokenType::Identifier("aa".to_string())));
         Ok(())
