@@ -1,10 +1,7 @@
 use core::fmt;
-use std::{
-    iter::{Enumerate, Peekable},
-    num::ParseFloatError,
-    str::Chars,
-};
+use std::{iter::Enumerate, num::ParseFloatError, str::Chars};
 
+use itertools::MultiPeek;
 use token_type::TokenType;
 
 mod token_type;
@@ -22,7 +19,7 @@ pub(crate) struct Token {
     token_type: TokenType,
 }
 
-type I<'a> = Peekable<Enumerate<Chars<'a>>>;
+type I<'a> = MultiPeek<Enumerate<Chars<'a>>>;
 
 impl From<ParseFloatError> for TokenError {
     fn from(value: ParseFloatError) -> Self {
@@ -106,22 +103,55 @@ impl Token {
         Ok(token)
     }
 
+    fn next_if_matches(iter: &mut I, next: &char) -> Option<(usize, char)> {
+        if matches!(iter.peek(), Some((_, ch)) if ch == next) {
+            return iter.next();
+        }
+        return None;
+    }
+
+    fn next_if<F>(iter: &mut I, cmp: F) -> Option<(usize, char)>
+    where
+        F: Fn(&usize, &char) -> bool,
+    {
+        if matches!(iter.peek(), Some((ind, ch)) if cmp(ind, ch)) {
+            return iter.next();
+        }
+        return None;
+    }
+
     fn consume_if(iter: &mut I, next: &char) -> bool {
-        iter.next_if(|(_, ch)| ch == next).is_some()
+        Token::next_if_matches(iter, next).is_some()
     }
 
     fn consume_comment(iter: &mut I) {
-        while iter.next_if(|(_ind, ch)| ch != &'\n').is_some() {}
+        while Token::next_if(iter, |_, ch| ch != &'\n').is_some() {}
     }
 
     fn consume_number(iter: &mut I, start: char) -> Result<f64, TokenError> {
         let mut text = String::from(start);
 
-        while let Some((_ind, digit)) = iter.next_if(|(_ind, ch)| ch.is_digit(10)) {
-            text.push(digit);
+        Token::consume_digits(iter, &mut text);
+
+        // reset peek to check for decimal
+        iter.reset_peek();
+        if matches!(iter.peek(), Some((_, ch)) if ch == &'.')
+            && matches!(iter.peek(), Some((_, ch)) if ch.is_digit(10))
+        {
+            println!("HERE");
+            // consume '.' and the following digits
+            iter.next();
+            text.push('.');
+            Token::consume_digits(iter, &mut text);
         }
 
         Ok(text.parse()?)
+    }
+
+    fn consume_digits(iter: &mut I, text: &mut String) {
+        while let Some((_ind, digit)) = Token::next_if(iter, |_ind, ch| ch.is_digit(10)) {
+            text.push(digit);
+        }
     }
 
     fn consume_string(iter: &mut I, start: usize) -> Result<String, TokenError> {
@@ -141,10 +171,29 @@ impl Token {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::*;
 
     fn get_iter(content: &'static str) -> I<'static> {
-        content.chars().enumerate().peekable()
+        content.chars().enumerate().multipeek()
+    }
+
+    #[test]
+    fn next_if_matches_true_returns_next() {
+        let mut iter = get_iter("=");
+        let res = Token::next_if_matches(&mut iter, &'=');
+        assert!(res.is_some(), "Unexpected empty result");
+        assert_eq!(res.unwrap(), (0, '='), "Did not return expected element");
+        assert!(iter.next().is_none(), "Did not consume next");
+    }
+
+    #[test]
+    fn next_if_matches_false_return_none() {
+        let mut iter = get_iter("=");
+        let res = Token::next_if_matches(&mut iter, &'!');
+        assert!(res.is_none(), "Unexpected result");
+        assert!(iter.next().is_some(), "Called next on iter");
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use token::Token;
 
 mod token;
@@ -23,7 +24,7 @@ impl Scanner {
     // TODO: return a result
     pub fn scan_tokens(&mut self) -> Vec<Token> {
         let mut tokens = vec![];
-        let mut iter = self.content.chars().enumerate().peekable();
+        let mut iter = self.content.chars().enumerate().multipeek();
         loop {
             self.start = self.current; // TODO: Clean up
             let token = Token::read_next(&mut iter);
