@@ -24,7 +24,7 @@ pub(super) enum TokenType {
     LessEqual,
 
     // Literals.
-    Identifier,
+    Identifier(String),
     String(String),
     Number(f64), // this can be optimized with different num types
 

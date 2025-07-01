@@ -74,6 +74,8 @@ impl Token {
                 '!' => Some(TokenType::Bang),
                 '=' if Token::consume_if(iter, &'=') => Some(TokenType::EqualEqual),
                 '=' => Some(TokenType::Equal),
+                '|' if Token::consume_if(iter, &'|') => Some(TokenType::Or),
+                '&' if Token::consume_if(iter, &'&') => Some(TokenType::And),
                 '<' if Token::consume_if(iter, &'=') => Some(TokenType::LessEqual),
                 '<' => Some(TokenType::Less),
                 '>' if Token::consume_if(iter, &'=') => Some(TokenType::GreaterEqual),
@@ -91,6 +93,7 @@ impl Token {
                 ' ' | '\r' | '\t' | '\n' => None,
                 // Numbers
                 c if c.is_digit(10) => Some(TokenType::Number(Token::consume_number(iter, c)?)),
+                c if c.is_alphabetic() => Some(Token::consume_identifier(iter, c)),
                 _ => {
                     return Err(TokenError::InvalidToken(c, ind));
                 }
@@ -166,6 +169,32 @@ impl Token {
         // if we are here, we have read the whole iterator and never reached the closing tag for
         // the string
         Err(TokenError::UnterminatedString(start))
+    }
+
+    fn consume_identifier(iter: &mut I, start: char) -> TokenType {
+        let mut text = String::from(start);
+
+        while let Some((_, ch)) = Token::next_if(iter, |_, ch| ch.is_alphanumeric()) {
+            text.push(ch);
+        }
+
+        match text.as_str() {
+            "class" => TokenType::Class,
+            "else" => TokenType::Else,
+            "false" => TokenType::False,
+            "for" => TokenType::For,
+            "fn" => TokenType::Fn,
+            "if" => TokenType::If,
+            "nil" => TokenType::Nil,
+            "print" => TokenType::Print,
+            "return" => TokenType::Return,
+            "super" => TokenType::Super,
+            "this" => TokenType::This,
+            "true" => TokenType::True,
+            "let" => TokenType::Let,
+            "while" => TokenType::While,
+            _ => TokenType::Identifier(text),
+        }
     }
 }
 
@@ -275,6 +304,14 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn consume_identifier_ignores_space() {
+        let mut iter = get_iter("a a");
+        let res = Token::consume_identifier(&mut iter, 'a');
+        assert_eq!(res, TokenType::Identifier("aa".to_string()));
+    }
+
+    // from tests
     #[test]
     fn from_left_paren() -> Result<(), TokenError> {
         let res = Token::from(&mut get_iter("("))?;
@@ -457,4 +494,27 @@ mod tests {
         assert_eq!(res, None);
         Ok(())
     }
+
+    #[test]
+    fn from_or() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("||"))?;
+        assert_eq!(res, Some(TokenType::Or));
+        Ok(())
+    }
+
+    #[test]
+    fn from_and() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("&&"))?;
+        assert_eq!(res, Some(TokenType::And));
+        Ok(())
+    }
+
+    #[test]
+    fn from_identifier() -> Result<(), TokenError> {
+        let res = Token::from(&mut get_iter("aa bb"))?;
+        assert_eq!(res, Some(TokenType::Identifier("aa".to_string())));
+        Ok(())
+    }
+
+    // TODO: Test reserved words
 }
