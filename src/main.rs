@@ -4,8 +4,10 @@ use std::{
     process::exit,
 };
 
+use parser::Parser;
 use scanner::Scanner;
 
+mod parser;
 mod scanner;
 mod token;
 
@@ -56,8 +58,7 @@ fn run(content: String) {
     let mut scanner = Scanner::new(content);
 
     let tokens = scanner.scan_tokens();
+    let expression = Parser::parse(tokens.into_iter().enumerate().peekable());
 
-    for token in tokens {
-        println!("{token:?}");
-    }
+    dbg!(expression);
 }
