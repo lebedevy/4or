@@ -1,0 +1,8 @@
+pub(crate) use token_type::TokenType;
+
+mod token_type;
+
+#[derive(Debug)]
+pub(crate) struct Token {
+    pub(crate) token_type: TokenType,
+}
