@@ -7,6 +7,7 @@ use std::{
 use scanner::Scanner;
 
 mod scanner;
+mod token;
 
 fn main() {
     // Skip the first argument which is tradtionally the path to the executable

@@ -2,9 +2,8 @@ use core::fmt;
 use std::{iter::Enumerate, num::ParseFloatError, str::Chars};
 
 use itertools::MultiPeek;
-use token_type::TokenType;
 
-mod token_type;
+use crate::token::{Token, TokenType};
 
 #[derive(Debug)]
 pub(super) enum TokenParseError {
@@ -12,11 +11,6 @@ pub(super) enum TokenParseError {
     EmptyIterator,
     UnterminatedString(usize),
     InvalidNumber(ParseFloatError),
-}
-
-#[derive(Debug)]
-pub(crate) struct Token {
-    token_type: TokenType,
 }
 
 type I<'a> = MultiPeek<Enumerate<Chars<'a>>>;
@@ -46,16 +40,25 @@ impl fmt::Display for TokenParseError {
     }
 }
 
-impl Token {
-    pub(super) fn read_next(iter: &mut I) -> Result<Option<Self>, TokenParseError> {
+pub trait ReadFrom<T>
+where
+    T: Sized,
+{
+    fn read_next(iter: &mut I) -> Result<Option<T>, TokenParseError>;
+}
+
+impl ReadFrom<Token> for Token {
+    fn read_next(iter: &mut I) -> Result<Option<Token>, TokenParseError> {
         let token = Token::from(iter)?;
 
         Ok(match token {
-            Some(token_type) => Some(Self { token_type }),
+            Some(token_type) => Some(Token { token_type }),
             None => None,
         })
     }
+}
 
+impl Token {
     fn from(iter: &mut I) -> Result<Option<TokenType>, TokenParseError> {
         let token = match iter.next() {
             Some((ind, c)) => match c {
