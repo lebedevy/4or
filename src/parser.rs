@@ -84,11 +84,12 @@ impl Parser {
                     let expr = Parser::expression(tokens);
                     assert!(
                         Parser::match_next(tokens, &vec![TokenType::RightParen]).is_some(),
-                        "Parenthesis not closed"
+                        "Expected ')' after expression. {:?}",
+                        token
                     );
                     Box::new(Grouping { expression: expr })
                 }
-                _ => panic!("Invalid token during parsing"),
+                _ => panic!("Invalid token during parsing {:?}", token),
             },
             None => panic!("Unexpected termination during parsking"),
         }

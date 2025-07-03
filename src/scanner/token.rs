@@ -52,51 +52,53 @@ impl ReadFrom<Token> for Token {
         let token = Token::from(iter)?;
 
         Ok(match token {
-            Some(token_type) => Some(Token { token_type }),
+            Some((index, token_type)) => Some(Token { index, token_type }),
             None => None,
         })
     }
 }
 
 impl Token {
-    fn from(iter: &mut I) -> Result<Option<TokenType>, TokenParseError> {
+    fn from(iter: &mut I) -> Result<Option<(usize, TokenType)>, TokenParseError> {
         let token = match iter.next() {
             Some((ind, c)) => match c {
-                '(' => Some(TokenType::LeftParen),
-                ')' => Some(TokenType::RightParen),
-                '{' => Some(TokenType::LeftBrace),
-                '}' => Some(TokenType::RightBrace),
-                ',' => Some(TokenType::Comma),
-                '.' => Some(TokenType::Dot),
-                '-' => Some(TokenType::Minus),
-                '+' => Some(TokenType::Plus),
-                ';' => Some(TokenType::Semicolon),
-                '*' => Some(TokenType::Star),
+                '(' => Some((ind, TokenType::LeftParen)),
+                ')' => Some((ind, TokenType::RightParen)),
+                '{' => Some((ind, TokenType::LeftBrace)),
+                '}' => Some((ind, TokenType::RightBrace)),
+                ',' => Some((ind, TokenType::Comma)),
+                '.' => Some((ind, TokenType::Dot)),
+                '-' => Some((ind, TokenType::Minus)),
+                '+' => Some((ind, TokenType::Plus)),
+                ';' => Some((ind, TokenType::Semicolon)),
+                '*' => Some((ind, TokenType::Star)),
                 // Potentially compound tokens
-                '!' if Token::consume_if(iter, &'=') => Some(TokenType::BangEqual),
-                '!' => Some(TokenType::Bang),
-                '=' if Token::consume_if(iter, &'=') => Some(TokenType::EqualEqual),
-                '=' => Some(TokenType::Equal),
-                '|' if Token::consume_if(iter, &'|') => Some(TokenType::Or),
-                '&' if Token::consume_if(iter, &'&') => Some(TokenType::And),
-                '<' if Token::consume_if(iter, &'=') => Some(TokenType::LessEqual),
-                '<' => Some(TokenType::Less),
-                '>' if Token::consume_if(iter, &'=') => Some(TokenType::GreaterEqual),
-                '>' => Some(TokenType::Greater),
+                '!' if Token::consume_if(iter, &'=') => Some((ind, TokenType::BangEqual)),
+                '!' => Some((ind, TokenType::Bang)),
+                '=' if Token::consume_if(iter, &'=') => Some((ind, TokenType::EqualEqual)),
+                '=' => Some((ind, TokenType::Equal)),
+                '|' if Token::consume_if(iter, &'|') => Some((ind, TokenType::Or)),
+                '&' if Token::consume_if(iter, &'&') => Some((ind, TokenType::And)),
+                '<' if Token::consume_if(iter, &'=') => Some((ind, TokenType::LessEqual)),
+                '<' => Some((ind, TokenType::Less)),
+                '>' if Token::consume_if(iter, &'=') => Some((ind, TokenType::GreaterEqual)),
+                '>' => Some((ind, TokenType::Greater)),
                 // division or comment
                 '/' if Token::consume_if(iter, &'/') => {
                     Token::consume_comment(iter);
                     None
                 }
-                '/' => Some(TokenType::Slash),
+                '/' => Some((ind, TokenType::Slash)),
                 // Strings
-                '"' => Some(TokenType::String(Token::consume_string(iter, ind)?)),
+                '"' => Some((ind, TokenType::String(Token::consume_string(iter, ind)?))),
                 // ignored chars
                 // TODO: Increment on line on new line
                 ' ' | '\r' | '\t' | '\n' => None,
                 // Numbers
-                c if c.is_digit(10) => Some(TokenType::Number(Token::consume_number(iter, c)?)),
-                c if c.is_alphabetic() => Some(Token::consume_identifier(iter, c)),
+                c if c.is_digit(10) => {
+                    Some((ind, TokenType::Number(Token::consume_number(iter, c)?)))
+                }
+                c if c.is_alphabetic() => Some((ind, Token::consume_identifier(iter, c))),
                 _ => {
                     return Err(TokenParseError::InvalidToken(c, ind));
                 }
@@ -318,119 +320,119 @@ mod tests {
     #[test]
     fn from_left_paren() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("("))?;
-        assert_eq!(res, Some(TokenType::LeftParen));
+        assert_eq!(res, Some((0, TokenType::LeftParen)));
         Ok(())
     }
 
     #[test]
     fn from_right_paren() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(")"))?;
-        assert_eq!(res, Some(TokenType::RightParen));
+        assert_eq!(res, Some((0, TokenType::RightParen)));
         Ok(())
     }
 
     #[test]
     fn from_left_brace() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("{"))?;
-        assert_eq!(res, Some(TokenType::LeftBrace));
+        assert_eq!(res, Some((0, TokenType::LeftBrace)));
         Ok(())
     }
 
     #[test]
     fn from_right_brace() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("}"))?;
-        assert_eq!(res, Some(TokenType::RightBrace));
+        assert_eq!(res, Some((0, TokenType::RightBrace)));
         Ok(())
     }
 
     #[test]
     fn from_comma() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(","))?;
-        assert_eq!(res, Some(TokenType::Comma));
+        assert_eq!(res, Some((0, TokenType::Comma)));
         Ok(())
     }
 
     #[test]
     fn from_dot() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("."))?;
-        assert_eq!(res, Some(TokenType::Dot));
+        assert_eq!(res, Some((0, TokenType::Dot)));
         Ok(())
     }
 
     #[test]
     fn from_minus() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("-"))?;
-        assert_eq!(res, Some(TokenType::Minus));
+        assert_eq!(res, Some((0, TokenType::Minus)));
         Ok(())
     }
 
     #[test]
     fn from_plus() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("+"))?;
-        assert_eq!(res, Some(TokenType::Plus));
+        assert_eq!(res, Some((0, TokenType::Plus)));
         Ok(())
     }
 
     #[test]
     fn from_semicolon() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(";"))?;
-        assert_eq!(res, Some(TokenType::Semicolon));
+        assert_eq!(res, Some((0, TokenType::Semicolon)));
         Ok(())
     }
 
     #[test]
     fn from_star() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("*"))?;
-        assert_eq!(res, Some(TokenType::Star));
+        assert_eq!(res, Some((0, TokenType::Star)));
         Ok(())
     }
 
     #[test]
     fn from_bang_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("!="))?;
-        assert_eq!(res, Some(TokenType::BangEqual));
+        assert_eq!(res, Some((0, TokenType::BangEqual)));
         Ok(())
     }
 
     #[test]
     fn from_bang() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("!"))?;
-        assert_eq!(res, Some(TokenType::Bang));
+        assert_eq!(res, Some((0, TokenType::Bang)));
         Ok(())
     }
 
     #[test]
     fn from_equal_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("=="))?;
-        assert_eq!(res, Some(TokenType::EqualEqual));
+        assert_eq!(res, Some((0, TokenType::EqualEqual)));
         Ok(())
     }
 
     #[test]
     fn from_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("="))?;
-        assert_eq!(res, Some(TokenType::Equal));
+        assert_eq!(res, Some((0, TokenType::Equal)));
         Ok(())
     }
 
     #[test]
     fn from_less_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("<="))?;
-        assert_eq!(res, Some(TokenType::LessEqual));
+        assert_eq!(res, Some((0, TokenType::LessEqual)));
         Ok(())
     }
 
     #[test]
     fn from_less() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("<"))?;
-        assert_eq!(res, Some(TokenType::Less));
+        assert_eq!(res, Some((0, TokenType::Less)));
         Ok(())
     }
 
     #[test]
     fn from_greater_equal() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(">="))?;
-        assert_eq!(res, Some(TokenType::GreaterEqual));
+        assert_eq!(res, Some((0, TokenType::GreaterEqual)));
         Ok(())
     }
 
@@ -438,7 +440,7 @@ mod tests {
     fn from_greater() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter(">"))?;
         dbg!(&res);
-        assert_eq!(res, Some(TokenType::Greater));
+        assert_eq!(res, Some((0, TokenType::Greater)));
         Ok(())
     }
 
@@ -452,14 +454,14 @@ mod tests {
     #[test]
     fn from_slash() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("/"))?;
-        assert_eq!(res, Some(TokenType::Slash));
+        assert_eq!(res, Some((0, TokenType::Slash)));
         Ok(())
     }
 
     #[test]
     fn from_string() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("\"test\""))?;
-        assert_eq!(res, Some(TokenType::String("test".to_string())));
+        assert_eq!(res, Some((0, TokenType::String("test".to_string()))));
         Ok(())
     }
 
@@ -473,7 +475,7 @@ mod tests {
     #[test]
     fn from_number() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("123.123"))?;
-        assert_eq!(res, Some(TokenType::Number(123.123)));
+        assert_eq!(res, Some((0, TokenType::Number(123.123))));
         Ok(())
     }
 
@@ -501,21 +503,21 @@ mod tests {
     #[test]
     fn from_or() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("||"))?;
-        assert_eq!(res, Some(TokenType::Or));
+        assert_eq!(res, Some((0, TokenType::Or)));
         Ok(())
     }
 
     #[test]
     fn from_and() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("&&"))?;
-        assert_eq!(res, Some(TokenType::And));
+        assert_eq!(res, Some((0, TokenType::And)));
         Ok(())
     }
 
     #[test]
     fn from_identifier() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("aa bb"))?;
-        assert_eq!(res, Some(TokenType::Identifier("aa".to_string())));
+        assert_eq!(res, Some((0, TokenType::Identifier("aa".to_string()))));
         Ok(())
     }
 
