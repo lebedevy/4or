@@ -58,20 +58,33 @@ fn run(content: String) {
     let tokens = scanner.scan_tokens();
     let expression = Parser::parse(tokens.into_iter().enumerate().peekable());
 
+    let expression = match expression {
+        Ok(exp) => exp,
+        Err(err) => {
+            dbg!(err);
+            return;
+        }
+    };
+
     let val = Interpreter::evaluate(expression);
 
     match val {
-        parser::Literal::Bool(val) => {
-            println!("> {}", val);
-        }
-        parser::Literal::Number(val) => {
-            println!("> {}", val);
-        }
-        parser::Literal::String(val) => {
-            println!("> {}", val);
-        }
-        parser::Literal::Nil => {
-            println!("> {}", "nil");
+        Ok(val) => match val {
+            parser::Literal::Bool(val) => {
+                println!("> {}", val);
+            }
+            parser::Literal::Number(val) => {
+                println!("> {}", val);
+            }
+            parser::Literal::String(val) => {
+                println!("> {}", val);
+            }
+            parser::Literal::Nil => {
+                println!("> {}", "nil");
+            }
+        },
+        Err(err) => {
+            dbg!(err);
         }
     };
 }

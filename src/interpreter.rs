@@ -1,5 +1,3 @@
-use core::panic;
-
 use crate::{
     parser::{Expression, Literal},
     token::{Token, TokenType},
@@ -8,32 +6,43 @@ use crate::{
 pub(super) struct Interpreter {}
 
 impl Interpreter {
-    pub(super) fn evaluate(expression: Expression) -> Literal {
+    pub(super) fn evaluate(expression: Expression) -> Result<Literal, InterpreterError> {
         expression.evaluate()
     }
 }
 
+#[derive(Debug)]
+pub(super) enum InterpreterError {
+    InvalidUnary(Token),
+    InvalidBinary(Token),
+}
+
 trait Evaluate {
-    fn evaluate(&self) -> Literal;
+    fn evaluate(&self) -> Result<Literal, InterpreterError>;
 }
 
 impl Evaluate for Expression {
-    fn evaluate(&self) -> Literal {
+    fn evaluate(&self) -> Result<Literal, InterpreterError> {
         match self {
             Expression::Binary(left, token, right) => binary(left, token, right),
             Expression::Grouping(expression) => grouping(expression),
             // TODO: Do we want to clone?
-            Expression::Literal(literal) => literal.clone(),
+            Expression::Literal(literal) => Ok(literal.clone()),
             Expression::Unary(token, expression) => unary(token, expression),
         }
     }
 }
 
-fn binary(left: &Box<Expression>, operator: &Token, right: &Box<Expression>) -> Literal {
-    let left = left.evaluate();
-    let right = right.evaluate();
+fn binary(
+    left: &Box<Expression>,
+    operator: &Token,
+    right: &Box<Expression>,
+) -> Result<Literal, InterpreterError> {
+    let left = left.evaluate()?;
+    let right = right.evaluate()?;
 
-    match (&operator.token_type, left, right) {
+    // TODO: Overflow
+    let res = match (&operator.token_type, left, right) {
         // Numeric
         (TokenType::Minus, Literal::Number(right), Literal::Number(left)) => {
             Literal::Number(left - right)
@@ -68,21 +77,25 @@ fn binary(left: &Box<Expression>, operator: &Token, right: &Box<Expression>) -> 
         // TODO: Consider the implications; currently just outsourcing the comparison to rust
         (TokenType::EqualEqual, right, left) => Literal::Bool(right == left),
         (TokenType::BangEqual, right, left) => Literal::Bool(right != left),
-        val => panic!("Unexpected binary operator {:?}", val),
-    }
+        _val => return Err(InterpreterError::InvalidBinary(operator.clone())),
+    };
+
+    Ok(res)
 }
 
-fn unary(token: &Token, expression: &Box<Expression>) -> Literal {
-    let right = expression.evaluate();
+fn unary(token: &Token, expression: &Box<Expression>) -> Result<Literal, InterpreterError> {
+    let right = expression.evaluate()?;
 
-    match (&token.token_type, right) {
+    let res = match (&token.token_type, right) {
         (TokenType::Minus, Literal::Number(num)) => Literal::Number(-num),
         // We are not allowing the concept of "truthiness"; give me bool or get bonked
         (TokenType::Bang, Literal::Bool(val)) => Literal::Bool(!val),
-        val => panic!("Unexpected unary expression; {:?}", val),
-    }
+        _val => return Err(InterpreterError::InvalidUnary(token.clone())),
+    };
+
+    Ok(res)
 }
 
-fn grouping(expression: &Box<Expression>) -> Literal {
+fn grouping(expression: &Box<Expression>) -> Result<Literal, InterpreterError> {
     expression.evaluate()
 }

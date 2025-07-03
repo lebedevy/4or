@@ -13,16 +13,22 @@ type Peek = Peekable<Enumerate<IntoIter<Token>>>;
 
 pub(super) struct Parser {}
 
+#[derive(Debug)]
+pub(super) enum ParserError {
+    InvalidPrimaryToken(Token),
+    UnexpectedTermination,
+}
+
 impl Parser {
-    pub(crate) fn parse(mut tokens: Peek) -> Expression {
+    pub(crate) fn parse(mut tokens: Peek) -> Result<Expression, ParserError> {
         Parser::expression(&mut tokens)
     }
 
-    fn expression(tokens: &mut Peek) -> Expression {
+    fn expression(tokens: &mut Peek) -> Result<Expression, ParserError> {
         Parser::equality(tokens)
     }
 
-    fn equality(tokens: &mut Peek) -> Expression {
+    fn equality(tokens: &mut Peek) -> Result<Expression, ParserError> {
         Parser::consume(
             tokens,
             vec![TokenType::BangEqual, TokenType::EqualEqual],
@@ -31,7 +37,7 @@ impl Parser {
     }
 
     // TODO: This is the same function as above, except for the tokens we match
-    fn comparison(tokens: &mut Peek) -> Expression {
+    fn comparison(tokens: &mut Peek) -> Result<Expression, ParserError> {
         Parser::consume(
             tokens,
             vec![
@@ -44,7 +50,7 @@ impl Parser {
         )
     }
 
-    fn term(tokens: &mut Peek) -> Expression {
+    fn term(tokens: &mut Peek) -> Result<Expression, ParserError> {
         Parser::consume(
             tokens,
             vec![TokenType::Minus, TokenType::Plus],
@@ -52,7 +58,7 @@ impl Parser {
         )
     }
 
-    fn factor(tokens: &mut Peek) -> Expression {
+    fn factor(tokens: &mut Peek) -> Result<Expression, ParserError> {
         Parser::consume(
             tokens,
             vec![TokenType::Slash, TokenType::Star],
@@ -60,20 +66,19 @@ impl Parser {
         )
     }
 
-    fn unary(tokens: &mut Peek) -> Expression {
+    fn unary(tokens: &mut Peek) -> Result<Expression, ParserError> {
         while let Some((_, operator)) =
             Parser::match_next(tokens, &vec![TokenType::Bang, TokenType::Minus])
         {
-            let right = Parser::term(tokens);
-            return Expression::Unary(operator, Box::new(right));
+            let right = Parser::term(tokens)?;
+            return Ok(Expression::Unary(operator, Box::new(right)));
         }
 
         return Parser::primary(tokens);
     }
 
-    // TODO: More graceful handing of exists
-    fn primary(tokens: &mut Peek) -> Expression {
-        match tokens.next() {
+    fn primary(tokens: &mut Peek) -> Result<Expression, ParserError> {
+        let res = match tokens.next() {
             Some((_, token)) => match token.token_type {
                 TokenType::False => Expression::Literal(Literal::Bool(false)),
                 TokenType::True => Expression::Literal(Literal::Bool(true)),
@@ -81,7 +86,7 @@ impl Parser {
                 TokenType::Number(num) => Expression::Literal(Literal::Number(num)),
                 TokenType::String(str) => Expression::Literal(Literal::String(str)),
                 TokenType::LeftParen => {
-                    let expr = Parser::expression(tokens);
+                    let expr = Parser::expression(tokens)?;
                     assert!(
                         Parser::match_next(tokens, &vec![TokenType::RightParen]).is_some(),
                         "Expected ')' after expression. {:?}",
@@ -89,25 +94,27 @@ impl Parser {
                     );
                     Expression::Grouping(Box::new(expr))
                 }
-                _ => panic!("Invalid token during parsing {:?}", token),
+                _ => return Err(ParserError::InvalidPrimaryToken(token.clone())),
             },
-            None => panic!("Unexpected termination during parsking"),
-        }
+            None => return Err(ParserError::UnexpectedTermination),
+        };
+
+        Ok(res)
     }
 
     fn consume(
         tokens: &mut Peek,
         operators: Vec<TokenType>,
-        mut expr: impl FnMut(&mut Peek) -> Expression,
-    ) -> Expression {
-        let mut left = expr(tokens);
+        mut expr: impl FnMut(&mut Peek) -> Result<Expression, ParserError>,
+    ) -> Result<Expression, ParserError> {
+        let mut left = expr(tokens)?;
 
         while let Some((_, operator)) = Parser::match_next(tokens, &operators) {
-            let right = expr(tokens);
+            let right = expr(tokens)?;
             left = Expression::Binary(Box::new(left), operator, Box::new(right))
         }
 
-        left
+        Ok(left)
     }
 
     fn syncrhonize(tokens: &mut Peek) {
