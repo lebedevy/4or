@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use crate::token::Token;
 
@@ -16,4 +16,24 @@ pub(crate) enum Literal {
     Number(f64),
     String(String),
     Nil,
+}
+
+impl Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Literal::Bool(val) => {
+                write!(f, "{}", val);
+            }
+            Literal::Number(val) => {
+                write!(f, "{}", val);
+            }
+            Literal::String(val) => {
+                write!(f, "{}", val);
+            }
+            Literal::Nil => {
+                write!(f, "nil");
+            }
+        };
+        Ok(())
+    }
 }

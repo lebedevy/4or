@@ -1,12 +1,34 @@
 use crate::{
-    parser::{Expression, Literal},
+    parser::{Expression, Literal, Statement},
     token::{Token, TokenType},
 };
 
 pub(super) struct Interpreter {}
 
 impl Interpreter {
-    pub(super) fn evaluate(expression: Expression) -> Result<Literal, InterpreterError> {
+    pub(super) fn run(statements: Vec<Statement>) -> Result<(), InterpreterError> {
+        for statement in statements {
+            Interpreter::execute(statement)?;
+        }
+
+        Ok(())
+    }
+
+    fn execute(statement: Statement) -> Result<(), InterpreterError> {
+        match statement {
+            Statement::Expression(expression) => {
+                Interpreter::evaluate(expression)?;
+            }
+            Statement::Print(expression) => {
+                let val = Interpreter::evaluate(expression)?;
+                println!("> {}", val);
+            }
+        };
+
+        Ok(())
+    }
+
+    fn evaluate(expression: Expression) -> Result<Literal, InterpreterError> {
         expression.evaluate()
     }
 }

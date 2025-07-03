@@ -4,10 +4,12 @@ use std::{
 };
 
 pub(crate) use expression::{Expression, Literal};
+pub(crate) use statement::Statement;
 
 use crate::token::{Token, TokenType};
 
 mod expression;
+mod statement;
 
 type Peek = Peekable<Enumerate<IntoIter<Token>>>;
 
@@ -15,13 +17,40 @@ pub(super) struct Parser {}
 
 #[derive(Debug)]
 pub(super) enum ParserError {
+    // TODO: this should be a struct holding actual/expected Tokens
+    UnterminatedToken(Token, TokenType),
     InvalidPrimaryToken(Token),
     UnexpectedTermination,
 }
 
 impl Parser {
-    pub(crate) fn parse(mut tokens: Peek) -> Result<Expression, ParserError> {
-        Parser::expression(&mut tokens)
+    pub(crate) fn parse(mut tokens: Peek) -> Result<Vec<Statement>, ParserError> {
+        let mut statements = vec![];
+        while let Some((_, token)) = tokens.peek() {
+            let res = match token.token_type {
+                TokenType::Print => {
+                    tokens.next();
+                    Parser::print_statement(&mut tokens)?
+                }
+                _ => Parser::expression_statement(&mut tokens)?,
+            };
+
+            statements.push(res);
+        }
+
+        Ok(statements)
+    }
+
+    fn print_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        let value = Parser::expression(tokens)?;
+        Parser::expect_match(tokens, TokenType::Semicolon)?;
+        Ok(Statement::Print(value))
+    }
+
+    fn expression_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        let expression = Parser::expression(tokens)?;
+        Parser::expect_match(tokens, TokenType::Semicolon)?;
+        Ok(Statement::Expression(expression))
     }
 
     fn expression(tokens: &mut Peek) -> Result<Expression, ParserError> {
@@ -87,11 +116,7 @@ impl Parser {
                 TokenType::String(str) => Expression::Literal(Literal::String(str)),
                 TokenType::LeftParen => {
                     let expr = Parser::expression(tokens)?;
-                    assert!(
-                        Parser::match_next(tokens, &vec![TokenType::RightParen]).is_some(),
-                        "Expected ')' after expression. {:?}",
-                        token
-                    );
+                    Parser::expect_match(tokens, TokenType::RightParen)?;
                     Expression::Grouping(Box::new(expr))
                 }
                 _ => return Err(ParserError::InvalidPrimaryToken(token.clone())),
@@ -117,7 +142,7 @@ impl Parser {
         Ok(left)
     }
 
-    fn syncrhonize(tokens: &mut Peek) {
+    fn synchronize(tokens: &mut Peek) {
         loop {
             match tokens.peek() {
                 Some((_, token)) => match token.token_type {
@@ -142,6 +167,16 @@ impl Parser {
         }
 
         // TODO: There is an advance in the book here; why?
+    }
+
+    fn expect_match(tokens: &mut Peek, token: TokenType) -> Result<(), ParserError> {
+        match tokens.next() {
+            Some(expected) => match expected {
+                (_, expected) if expected.token_type == token => Ok(()),
+                (_, actual) => Err(ParserError::UnterminatedToken(actual, token)),
+            },
+            None => Err(ParserError::UnexpectedTermination),
+        }
     }
 
     fn match_next(tokens: &mut Peek, to_match: &Vec<TokenType>) -> Option<(usize, Token)> {

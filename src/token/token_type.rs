@@ -38,6 +38,8 @@ pub(crate) enum TokenType {
     If,
     Nil,
     Or,
+    // TODO: Move this to a library and out of the core language
+    #[deprecated()]
     Print,
     Return,
     Super,

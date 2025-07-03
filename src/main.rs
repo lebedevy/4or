@@ -4,8 +4,8 @@ use std::{
     process::exit,
 };
 
-use interpreter::Interpreter;
-use parser::Parser;
+use interpreter::{Interpreter, InterpreterError};
+use parser::{Parser, ParserError};
 use scanner::Scanner;
 
 mod interpreter;
@@ -36,55 +36,59 @@ fn run_prompt() {
         if input.is_empty() {
             break;
         }
-        run(input);
+        let _ = run(input);
     }
 }
 
 fn run_file(path: &String) {
     let content = std::fs::read_to_string(path);
 
-    match content {
-        Ok(content) => run(content),
+    let content = match content {
+        Ok(content) => content,
         Err(err) => {
             eprintln!("Unable to read file {err}");
             exit(1)
         }
+    };
+
+    match run(content) {
+        Ok(_) => {
+            return;
+        }
+        Err(err) => {
+            dbg!(err);
+            exit(70);
+        }
     }
 }
 
-fn run(content: String) {
+fn run(content: String) -> Result<(), ProgramError> {
     let mut scanner = Scanner::new(content);
 
     let tokens = scanner.scan_tokens();
-    let expression = Parser::parse(tokens.into_iter().enumerate().peekable());
+    let statements = Parser::parse(tokens.into_iter().enumerate().peekable());
 
-    let expression = match expression {
+    let statements = match statements {
         Ok(exp) => exp,
         Err(err) => {
-            dbg!(err);
-            return;
+            dbg!(&err);
+            return Err(ProgramError::ParseError(err));
         }
     };
 
-    let val = Interpreter::evaluate(expression);
+    Interpreter::run(statements)?;
 
-    match val {
-        Ok(val) => match val {
-            parser::Literal::Bool(val) => {
-                println!("> {}", val);
-            }
-            parser::Literal::Number(val) => {
-                println!("> {}", val);
-            }
-            parser::Literal::String(val) => {
-                println!("> {}", val);
-            }
-            parser::Literal::Nil => {
-                println!("> {}", "nil");
-            }
-        },
-        Err(err) => {
-            dbg!(err);
-        }
-    };
+    Ok(())
+}
+
+#[derive(Debug)]
+enum ProgramError {
+    InterpreterError(InterpreterError),
+    ParseError(ParserError),
+}
+
+impl From<InterpreterError> for ProgramError {
+    fn from(value: InterpreterError) -> Self {
+        Self::InterpreterError(value)
+    }
 }
