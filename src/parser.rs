@@ -3,7 +3,7 @@ use std::{
     vec::IntoIter,
 };
 
-use expression::{Binary, Expr, Grouping, Literal, Unary};
+pub(crate) use expression::{Expression, Literal};
 
 use crate::token::{Token, TokenType};
 
@@ -14,15 +14,15 @@ type Peek = Peekable<Enumerate<IntoIter<Token>>>;
 pub(super) struct Parser {}
 
 impl Parser {
-    pub(crate) fn parse(mut tokens: Peek) -> Box<dyn Expr> {
+    pub(crate) fn parse(mut tokens: Peek) -> Expression {
         Parser::expression(&mut tokens)
     }
 
-    fn expression(tokens: &mut Peek) -> Box<dyn Expr> {
+    fn expression(tokens: &mut Peek) -> Expression {
         Parser::equality(tokens)
     }
 
-    fn equality(tokens: &mut Peek) -> Box<dyn Expr> {
+    fn equality(tokens: &mut Peek) -> Expression {
         Parser::consume(
             tokens,
             vec![TokenType::BangEqual, TokenType::EqualEqual],
@@ -31,7 +31,7 @@ impl Parser {
     }
 
     // TODO: This is the same function as above, except for the tokens we match
-    fn comparison(tokens: &mut Peek) -> Box<dyn Expr> {
+    fn comparison(tokens: &mut Peek) -> Expression {
         Parser::consume(
             tokens,
             vec![
@@ -44,7 +44,7 @@ impl Parser {
         )
     }
 
-    fn term(tokens: &mut Peek) -> Box<dyn Expr> {
+    fn term(tokens: &mut Peek) -> Expression {
         Parser::consume(
             tokens,
             vec![TokenType::Minus, TokenType::Plus],
@@ -52,7 +52,7 @@ impl Parser {
         )
     }
 
-    fn factor(tokens: &mut Peek) -> Box<dyn Expr> {
+    fn factor(tokens: &mut Peek) -> Expression {
         Parser::consume(
             tokens,
             vec![TokenType::Slash, TokenType::Star],
@@ -60,26 +60,26 @@ impl Parser {
         )
     }
 
-    fn unary(tokens: &mut Peek) -> Box<dyn Expr> {
+    fn unary(tokens: &mut Peek) -> Expression {
         while let Some((_, operator)) =
             Parser::match_next(tokens, &vec![TokenType::Bang, TokenType::Minus])
         {
             let right = Parser::term(tokens);
-            return Box::new(Unary { operator, right });
+            return Expression::Unary(operator, Box::new(right));
         }
 
         return Parser::primary(tokens);
     }
 
     // TODO: More graceful handing of exists
-    fn primary(tokens: &mut Peek) -> Box<dyn Expr> {
+    fn primary(tokens: &mut Peek) -> Expression {
         match tokens.next() {
             Some((_, token)) => match token.token_type {
-                TokenType::False => Box::new(Literal::Bool(false)),
-                TokenType::True => Box::new(Literal::Bool(true)),
-                TokenType::Nil => Box::new(Literal::Nil),
-                TokenType::Number(num) => Box::new(Literal::Number(num)),
-                TokenType::String(str) => Box::new(Literal::String(str)),
+                TokenType::False => Expression::Literal(Literal::Bool(false)),
+                TokenType::True => Expression::Literal(Literal::Bool(true)),
+                TokenType::Nil => Expression::Literal(Literal::Nil),
+                TokenType::Number(num) => Expression::Literal(Literal::Number(num)),
+                TokenType::String(str) => Expression::Literal(Literal::String(str)),
                 TokenType::LeftParen => {
                     let expr = Parser::expression(tokens);
                     assert!(
@@ -87,7 +87,7 @@ impl Parser {
                         "Expected ')' after expression. {:?}",
                         token
                     );
-                    Box::new(Grouping { expression: expr })
+                    Expression::Grouping(Box::new(expr))
                 }
                 _ => panic!("Invalid token during parsing {:?}", token),
             },
@@ -98,17 +98,13 @@ impl Parser {
     fn consume(
         tokens: &mut Peek,
         operators: Vec<TokenType>,
-        mut expr: impl FnMut(&mut Peek) -> Box<dyn Expr>,
-    ) -> Box<dyn Expr> {
+        mut expr: impl FnMut(&mut Peek) -> Expression,
+    ) -> Expression {
         let mut left = expr(tokens);
 
         while let Some((_, operator)) = Parser::match_next(tokens, &operators) {
             let right = expr(tokens);
-            left = Box::new(Binary {
-                left,
-                operator,
-                right,
-            })
+            left = Expression::Binary(Box::new(left), operator, Box::new(right))
         }
 
         left

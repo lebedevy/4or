@@ -4,9 +4,11 @@ use std::{
     process::exit,
 };
 
+use interpreter::Interpreter;
 use parser::Parser;
 use scanner::Scanner;
 
+mod interpreter;
 mod parser;
 mod scanner;
 mod token;
@@ -14,8 +16,6 @@ mod token;
 fn main() {
     // Skip the first argument which is tradtionally the path to the executable
     let args: Vec<String> = env::args().skip(1).collect();
-
-    dbg!(&args, &args.len());
 
     match &args.len() {
         0 => run_prompt(),
@@ -53,12 +53,25 @@ fn run_file(path: &String) {
 }
 
 fn run(content: String) {
-    println!("> {content}");
-
     let mut scanner = Scanner::new(content);
 
     let tokens = scanner.scan_tokens();
     let expression = Parser::parse(tokens.into_iter().enumerate().peekable());
 
-    dbg!(expression);
+    let val = Interpreter::evaluate(expression);
+
+    match val {
+        parser::Literal::Bool(val) => {
+            println!("> {}", val);
+        }
+        parser::Literal::Number(val) => {
+            println!("> {}", val);
+        }
+        parser::Literal::String(val) => {
+            println!("> {}", val);
+        }
+        parser::Literal::Nil => {
+            println!("> {}", "nil");
+        }
+    };
 }

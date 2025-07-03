@@ -3,34 +3,17 @@ use std::fmt::Debug;
 use crate::token::Token;
 
 #[derive(Debug)]
-pub(super) struct Binary {
-    pub(super) left: Box<dyn Expr>,
-    pub(super) operator: Token,
-    pub(super) right: Box<dyn Expr>,
+pub(crate) enum Expression {
+    Binary(Box<Expression>, Token, Box<Expression>),
+    Grouping(Box<Expression>),
+    Literal(Literal),
+    Unary(Token, Box<Expression>),
 }
 
-#[derive(Debug)]
-pub(super) struct Grouping {
-    pub(super) expression: Box<dyn Expr>,
-}
-
-#[derive(Debug)]
-pub(super) enum Literal {
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Literal {
     Bool(bool),
     Number(f64),
     String(String),
     Nil,
 }
-
-#[derive(Debug)]
-pub(super) struct Unary {
-    pub(super) operator: Token,
-    pub(super) right: Box<dyn Expr>,
-}
-
-pub(crate) trait Expr: Debug {}
-
-impl Expr for Binary {}
-impl Expr for Unary {}
-impl Expr for Literal {}
-impl Expr for Grouping {}
