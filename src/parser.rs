@@ -18,9 +18,10 @@ pub(super) struct Parser {}
 #[derive(Debug)]
 pub(super) enum ParserError {
     // TODO: this should be a struct holding actual/expected Tokens
-    UnterminatedToken(Token, TokenType),
+    UnexpectedToken(Option<Token>, TokenType),
     InvalidPrimaryToken(Token),
     UnexpectedTermination,
+    ExpectedIdentifier(Option<Token>),
 }
 
 impl Parser {
@@ -30,15 +31,51 @@ impl Parser {
             let res = match token.token_type {
                 TokenType::Print => {
                     tokens.next();
-                    Parser::print_statement(&mut tokens)?
+                    Parser::print_statement(&mut tokens)
                 }
-                _ => Parser::expression_statement(&mut tokens)?,
+                TokenType::Let => Parser::variable(&mut tokens),
+                _ => Parser::expression_statement(&mut tokens),
             };
 
-            statements.push(res);
+            match res {
+                Ok(res) => statements.push(res),
+                Err(err) => {
+                    Parser::synchronize(&mut tokens);
+                    return Err(err);
+                }
+            }
         }
 
         Ok(statements)
+    }
+
+    fn variable(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        Parser::expect_match(tokens, TokenType::Let)?;
+        let Some((_, identifier)) = tokens.next() else {
+            return Err(ParserError::ExpectedIdentifier(None));
+        };
+
+        let identifier = match &identifier.token_type {
+            TokenType::Identifier(_) => identifier,
+            _token => {
+                return Err(ParserError::UnexpectedToken(
+                    Some(identifier.clone()),
+                    TokenType::Identifier("".to_string()),
+                ));
+            }
+        };
+
+        let initial = match Parser::match_next(tokens, &vec![TokenType::Equal]) {
+            // we are doing assingment
+            Some((_, token)) if token.token_type == TokenType::Equal => {
+                Some(Parser::expression(tokens)?)
+            }
+            _ => None,
+        };
+
+        Parser::expect_match(tokens, TokenType::Semicolon)?;
+
+        Ok(Statement::Variable(identifier, initial))
     }
 
     fn print_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -106,6 +143,7 @@ impl Parser {
         return Parser::primary(tokens);
     }
 
+    // TODO: Consider empty expressions
     fn primary(tokens: &mut Peek) -> Result<Expression, ParserError> {
         let res = match tokens.next() {
             Some((_, token)) => match token.token_type {
@@ -114,6 +152,7 @@ impl Parser {
                 TokenType::Nil => Expression::Literal(Literal::Nil),
                 TokenType::Number(num) => Expression::Literal(Literal::Number(num)),
                 TokenType::String(str) => Expression::Literal(Literal::String(str)),
+                TokenType::Identifier(_) => Expression::Variable(token),
                 TokenType::LeftParen => {
                     let expr = Parser::expression(tokens)?;
                     Parser::expect_match(tokens, TokenType::RightParen)?;
@@ -143,43 +182,230 @@ impl Parser {
     }
 
     fn synchronize(tokens: &mut Peek) {
-        loop {
-            match tokens.peek() {
-                Some((_, token)) => match token.token_type {
-                    TokenType::Semicolon => {
-                        tokens.next();
-                        return ();
-                    }
-                    TokenType::Class => return (),
-                    TokenType::Fn => return (),
-                    TokenType::For => return (),
-                    TokenType::If => return (),
-                    TokenType::Print => return (),
-                    TokenType::Return => return (),
-                    TokenType::Let => return (),
-                    TokenType::While => return (),
-                    _ => {
-                        tokens.next();
-                    }
-                },
-                None => (),
+        while let Some((_, token)) = tokens.peek() {
+            match token.token_type {
+                TokenType::Semicolon => {
+                    tokens.next();
+                    return ();
+                }
+                TokenType::Class => return (),
+                TokenType::Fn => return (),
+                TokenType::For => return (),
+                TokenType::If => return (),
+                TokenType::Print => return (),
+                TokenType::Return => return (),
+                TokenType::Let => return (),
+                TokenType::While => return (),
+                _ => {
+                    tokens.next();
+                }
             }
         }
-
-        // TODO: There is an advance in the book here; why?
     }
 
-    fn expect_match(tokens: &mut Peek, token: TokenType) -> Result<(), ParserError> {
+    fn expect_match(tokens: &mut Peek, expected: TokenType) -> Result<Token, ParserError> {
         match tokens.next() {
-            Some(expected) => match expected {
-                (_, expected) if expected.token_type == token => Ok(()),
-                (_, actual) => Err(ParserError::UnterminatedToken(actual, token)),
+            Some(actual) => match actual {
+                (_, actual) if actual.token_type == expected => Ok(actual),
+                (_, actual) => Err(ParserError::UnexpectedToken(Some(actual), expected)),
             },
-            None => Err(ParserError::UnexpectedTermination),
+            None => Err(ParserError::UnexpectedToken(None, expected)),
         }
     }
 
     fn match_next(tokens: &mut Peek, to_match: &Vec<TokenType>) -> Option<(usize, Token)> {
         tokens.next_if(|(_, ch)| to_match.contains(&ch.token_type))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::panic;
+
+    use crate::{
+        parser::{Expression, Literal, Statement},
+        token::{Token, TokenType},
+    };
+
+    use super::{Parser, ParserError, Peek};
+
+    fn get_single(token_type: TokenType) -> Peek {
+        vec![Token {
+            token_type,
+            index: 0,
+        }]
+        .into_iter()
+        .enumerate()
+        .peekable()
+    }
+
+    fn get_iter(tokens: Vec<TokenType>) -> Peek {
+        tokens
+            .into_iter()
+            .enumerate()
+            .map(|(index, token_type)| Token { token_type, index })
+            .collect::<Vec<Token>>()
+            .into_iter()
+            .enumerate()
+            .peekable()
+    }
+
+    // Single rules
+    #[test]
+    fn primary_false() -> Result<(), ParserError> {
+        let literal = Parser::primary(&mut get_single(TokenType::False))?;
+        assert_eq!(literal, Expression::Literal(Literal::Bool(false)));
+        Ok(())
+    }
+
+    #[test]
+    fn primary_true() -> Result<(), ParserError> {
+        let literal = Parser::primary(&mut get_single(TokenType::True))?;
+        assert_eq!(literal, Expression::Literal(Literal::Bool(true)));
+        Ok(())
+    }
+
+    #[test]
+    fn primary_nil() -> Result<(), ParserError> {
+        let literal = Parser::primary(&mut get_single(TokenType::Nil))?;
+        assert_eq!(literal, Expression::Literal(Literal::Nil));
+        Ok(())
+    }
+
+    #[test]
+    fn primary_number() -> Result<(), ParserError> {
+        let literal = Parser::primary(&mut get_single(TokenType::Number(123.123)))?;
+        assert_eq!(literal, Expression::Literal(Literal::Number(123.123)));
+        Ok(())
+    }
+
+    #[test]
+    fn primary_string() -> Result<(), ParserError> {
+        let literal = Parser::primary(&mut get_single(TokenType::String("test".to_string())))?;
+        assert_eq!(
+            literal,
+            Expression::Literal(Literal::String("test".to_string()))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn primary_identifier() -> Result<(), ParserError> {
+        let literal = Parser::primary(&mut get_single(TokenType::Identifier("test".to_string())))?;
+        assert_eq!(
+            literal,
+            Expression::Variable(Token {
+                token_type: TokenType::Identifier("test".to_string()),
+                index: 0
+            })
+        );
+        Ok(())
+    }
+
+    // Compound rules
+    // parenthesis
+    #[test]
+    fn closed_paren() -> Result<(), ParserError> {
+        let literal = Parser::primary(&mut get_iter(vec![
+            TokenType::LeftParen,
+            TokenType::True,
+            TokenType::RightParen,
+        ]))?;
+
+        assert!(matches!(literal, Expression::Grouping(_)));
+        Ok(())
+    }
+
+    #[test]
+    fn unclosed_paren_error() {
+        let err = Parser::primary(&mut get_iter(vec![TokenType::LeftParen, TokenType::True]));
+        assert!(
+            err.is_err_and(|e| matches!(e, ParserError::UnexpectedToken(_, TokenType::RightParen)))
+        )
+    }
+
+    // variables
+    #[test]
+    fn variable_assigned() -> Result<(), ParserError> {
+        let parsed = Parser::parse(get_iter(vec![
+            TokenType::Let,
+            TokenType::Identifier("test".to_string()),
+            TokenType::Equal,
+            TokenType::True,
+            TokenType::Semicolon,
+        ]))?;
+
+        assert!(parsed.len() == 1, "Unexpected # of statements");
+
+        let (token, expression) = match &parsed[0] {
+            Statement::Variable(token, expression) => (token, expression),
+            _ => panic!("Did not produce a variable"),
+        };
+
+        assert!(matches!(
+                &token.token_type,
+                TokenType::Identifier(val) if val == "test"
+        ));
+
+        let Some(expression) = expression else {
+            panic!("Missing expected expression");
+        };
+
+        assert!(
+            matches!(expression, Expression::Literal(literal) if literal == &Literal::Bool(true))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn variable_unassigned() -> Result<(), ParserError> {
+        let parsed = Parser::parse(get_iter(vec![
+            TokenType::Let,
+            TokenType::Identifier("test".to_string()),
+            TokenType::Semicolon,
+        ]))?;
+
+        assert!(parsed.len() == 1, "Unexpected # of statements");
+
+        let (token, expression) = match &parsed[0] {
+            Statement::Variable(token, expression) => (token, expression),
+            _ => panic!("Did not produce a variable"),
+        };
+
+        assert!(matches!(
+                &token.token_type,
+                TokenType::Identifier(val) if val == "test"
+        ));
+
+        assert!(expression.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn variable_no_assignment_panics() -> Result<(), ParserError> {
+        let err = Parser::parse(get_iter(vec![
+            TokenType::Let,
+            TokenType::Identifier("test".to_string()),
+            TokenType::Equal,
+            TokenType::Semicolon,
+        ]));
+
+        assert!(err.is_err_and(|e| matches!(e, ParserError::InvalidPrimaryToken(_,))));
+
+        Ok(())
+    }
+
+    #[test]
+    fn variable_no_identifier_panics() -> Result<(), ParserError> {
+        let err = Parser::parse(get_iter(vec![TokenType::Let, TokenType::Equal]));
+
+        assert!(err.is_err_and(|e| matches!(
+            e,
+            ParserError::UnexpectedToken(_, TokenType::Identifier(_))
+        )));
+
+        Ok(())
     }
 }

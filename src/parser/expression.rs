@@ -2,11 +2,12 @@ use std::fmt::{Debug, Display};
 
 use crate::token::Token;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(Literal),
+    Variable(Token),
     Unary(Token, Box<Expression>),
 }
 
@@ -22,16 +23,16 @@ impl Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Bool(val) => {
-                write!(f, "{}", val);
+                write!(f, "{}", val)?;
             }
             Literal::Number(val) => {
-                write!(f, "{}", val);
+                write!(f, "{}", val)?;
             }
             Literal::String(val) => {
-                write!(f, "{}", val);
+                write!(f, "{}", val)?;
             }
             Literal::Nil => {
-                write!(f, "nil");
+                write!(f, "nil")?;
             }
         };
         Ok(())
