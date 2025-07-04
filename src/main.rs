@@ -8,6 +8,7 @@ use interpreter::{Interpreter, InterpreterError};
 use parser::{Parser, ParserError};
 use scanner::Scanner;
 
+mod environment;
 mod interpreter;
 mod parser;
 mod scanner;
@@ -28,6 +29,7 @@ fn main() {
 }
 
 fn run_prompt() {
+    let mut interpreter = Interpreter::new();
     loop {
         print!("> ");
         io::stdout().flush().expect("Failed to write to console");
@@ -36,12 +38,16 @@ fn run_prompt() {
         if input.is_empty() {
             break;
         }
-        let _ = run(input);
+
+        if let Err(err) = run(&mut interpreter, input) {
+            dbg!(err);
+        }
     }
 }
 
 fn run_file(path: &String) {
     let content = std::fs::read_to_string(path);
+    let mut interpreter = Interpreter::new();
 
     let content = match content {
         Ok(content) => content,
@@ -51,7 +57,7 @@ fn run_file(path: &String) {
         }
     };
 
-    match run(content) {
+    match run(&mut interpreter, content) {
         Ok(_) => {
             return;
         }
@@ -62,21 +68,13 @@ fn run_file(path: &String) {
     }
 }
 
-fn run(content: String) -> Result<(), ProgramError> {
+fn run(interpreter: &mut Interpreter, content: String) -> Result<(), ProgramError> {
     let mut scanner = Scanner::new(content);
 
     let tokens = scanner.scan_tokens();
-    let statements = Parser::parse(tokens.into_iter().enumerate().peekable());
+    let statements = Parser::parse(tokens.into_iter().enumerate().peekable())?;
 
-    let statements = match statements {
-        Ok(exp) => exp,
-        Err(err) => {
-            dbg!(&err);
-            return Err(ProgramError::ParseError(err));
-        }
-    };
-
-    Interpreter::run(statements)?;
+    interpreter.run(statements)?;
 
     Ok(())
 }
@@ -90,5 +88,11 @@ enum ProgramError {
 impl From<InterpreterError> for ProgramError {
     fn from(value: InterpreterError) -> Self {
         Self::InterpreterError(value)
+    }
+}
+
+impl From<ParserError> for ProgramError {
+    fn from(value: ParserError) -> Self {
+        Self::ParseError(value)
     }
 }

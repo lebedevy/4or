@@ -1,35 +1,59 @@
 use crate::{
+    environment::{Environment, EnvironmentError},
     parser::{Expression, Literal, Statement},
     token::{Token, TokenType},
 };
 
-pub(super) struct Interpreter {}
+pub(super) struct Interpreter {
+    environment: Environment,
+}
 
 impl Interpreter {
-    pub(super) fn run(statements: Vec<Statement>) -> Result<(), InterpreterError> {
+    pub(super) fn new() -> Self {
+        Self {
+            environment: Environment::new(),
+        }
+    }
+
+    pub(super) fn run(&mut self, statements: Vec<Statement>) -> Result<(), InterpreterError> {
         for statement in statements {
-            Interpreter::execute(statement)?;
+            self.execute(statement)?;
         }
 
         Ok(())
     }
 
-    fn execute(statement: Statement) -> Result<(), InterpreterError> {
+    fn execute(&mut self, statement: Statement) -> Result<(), InterpreterError> {
         match statement {
             Statement::Expression(expression) => {
-                Interpreter::evaluate(expression)?;
+                expression.evaluate(&self.environment)?;
             }
             Statement::Print(expression) => {
-                let val = Interpreter::evaluate(expression)?;
+                let val = expression.evaluate(&self.environment)?;
                 println!("> {}", val);
+            }
+            Statement::Variable(token, expression) => {
+                let value = match expression {
+                    Some(expression) => Some(expression.evaluate(&self.environment)?),
+                    None => None,
+                };
+
+                let identifier = match token.token_type {
+                    TokenType::Identifier(iden) => iden,
+                    _ => return Err(InterpreterError::InvalidVariable(token)),
+                };
+
+                self.environment.define(
+                    identifier,
+                    match value {
+                        Some(val) => val,
+                        None => Literal::Nil,
+                    },
+                );
             }
         };
 
         Ok(())
-    }
-
-    fn evaluate(expression: Expression) -> Result<Literal, InterpreterError> {
-        expression.evaluate()
     }
 }
 
@@ -37,21 +61,40 @@ impl Interpreter {
 pub(super) enum InterpreterError {
     InvalidUnary(Token),
     InvalidBinary(Token),
+    InvalidVariable(Token),
+    UndefinedVariable(String),
 }
 
 trait Evaluate {
-    fn evaluate(&self) -> Result<Literal, InterpreterError>;
+    fn evaluate(&self, environment: &Environment) -> Result<Literal, InterpreterError>;
 }
 
 impl Evaluate for Expression {
-    fn evaluate(&self) -> Result<Literal, InterpreterError> {
+    fn evaluate(&self, environment: &Environment) -> Result<Literal, InterpreterError> {
         match self {
-            Expression::Binary(left, token, right) => binary(left, token, right),
-            Expression::Grouping(expression) => grouping(expression),
-            // TODO: Do we want to clone?
+            Expression::Binary(left, token, right) => binary(left, token, right, environment),
+            Expression::Grouping(expression) => grouping(expression, environment),
             Expression::Literal(literal) => Ok(literal.clone()),
-            Expression::Unary(token, expression) => unary(token, expression),
+            Expression::Unary(token, expression) => unary(token, expression, environment),
+            Expression::Variable(token) => variable(token, environment),
         }
+    }
+}
+
+impl From<EnvironmentError> for InterpreterError {
+    fn from(value: EnvironmentError) -> Self {
+        match value {
+            EnvironmentError::UndefinedVariable(value) => {
+                InterpreterError::UndefinedVariable(value)
+            }
+        }
+    }
+}
+
+fn variable(token: &Token, environment: &Environment) -> Result<Literal, InterpreterError> {
+    match &token.token_type {
+        TokenType::Identifier(iden) => Ok(environment.get(iden)?),
+        _ => return Err(InterpreterError::InvalidVariable(token.clone())),
     }
 }
 
@@ -59,9 +102,10 @@ fn binary(
     left: &Box<Expression>,
     operator: &Token,
     right: &Box<Expression>,
+    environment: &Environment,
 ) -> Result<Literal, InterpreterError> {
-    let left = left.evaluate()?;
-    let right = right.evaluate()?;
+    let left = left.evaluate(environment)?;
+    let right = right.evaluate(environment)?;
 
     // TODO: Overflow
     let res = match (&operator.token_type, left, right) {
@@ -105,8 +149,12 @@ fn binary(
     Ok(res)
 }
 
-fn unary(token: &Token, expression: &Box<Expression>) -> Result<Literal, InterpreterError> {
-    let right = expression.evaluate()?;
+fn unary(
+    token: &Token,
+    expression: &Box<Expression>,
+    environment: &Environment,
+) -> Result<Literal, InterpreterError> {
+    let right = expression.evaluate(environment)?;
 
     let res = match (&token.token_type, right) {
         (TokenType::Minus, Literal::Number(num)) => Literal::Number(-num),
@@ -118,6 +166,9 @@ fn unary(token: &Token, expression: &Box<Expression>) -> Result<Literal, Interpr
     Ok(res)
 }
 
-fn grouping(expression: &Box<Expression>) -> Result<Literal, InterpreterError> {
-    expression.evaluate()
+fn grouping(
+    expression: &Box<Expression>,
+    environment: &Environment,
+) -> Result<Literal, InterpreterError> {
+    expression.evaluate(environment)
 }
