@@ -1,5 +1,6 @@
 use std::{
     env,
+    fmt::{Display, write},
     io::{self, Write},
     process::exit,
 };
@@ -40,7 +41,7 @@ fn run_prompt() {
         }
 
         if let Err(err) = run(&mut interpreter, input) {
-            dbg!(err);
+            eprintln!("{}", err);
         }
     }
 }
@@ -83,6 +84,19 @@ fn run(interpreter: &mut Interpreter, content: String) -> Result<(), ProgramErro
 enum ProgramError {
     InterpreterError(InterpreterError),
     ParseError(ParserError),
+}
+
+impl Display for ProgramError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProgramError::InterpreterError(interpreter_error) => {
+                write!(f, "Program error - {}", interpreter_error)?
+            }
+            ProgramError::ParseError(parser_error) => write!(f, "{}", parser_error)?,
+        };
+
+        Ok(())
+    }
 }
 
 impl From<InterpreterError> for ProgramError {

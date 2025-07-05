@@ -19,7 +19,7 @@ impl Environment {
 
     pub(super) fn assign(&mut self, name: &str, value: Literal) -> Result<(), EnvironmentError> {
         match self.values.contains_key(name) {
-            true => self.values.insert(name, value),
+            true => self.values.insert(name.to_string(), value),
             false => return Err(EnvironmentError::UndefinedVariable(name.to_string())),
         };
 

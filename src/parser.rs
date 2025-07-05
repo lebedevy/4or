@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     iter::{Enumerate, Peekable},
     vec::IntoIter,
 };
@@ -22,6 +23,38 @@ pub(super) enum ParserError {
     InvalidPrimaryToken(Token),
     UnexpectedTermination,
     ExpectedIdentifier(Option<Token>),
+}
+
+impl Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParserError::UnexpectedToken(actual, expected) => {
+                write!(
+                    f,
+                    "Parser error: unexpected token; expected '{}', got '{}'",
+                    expected,
+                    actual
+                        .as_ref()
+                        .map_or("None".to_string(), |x| x.to_string())
+                )?;
+            }
+            ParserError::InvalidPrimaryToken(token) => {
+                write!(f, "Parser error: Invalid primary token - '{}'", token)?;
+            }
+            ParserError::UnexpectedTermination => {
+                write!(f, "Parser error: Unexpected end in token terminator")?;
+            }
+            ParserError::ExpectedIdentifier(token) => {
+                write!(
+                    f,
+                    "Parser error: Expected identifier, got '{}'",
+                    token.as_ref().map_or("None".to_string(), |x| x.to_string())
+                )?;
+            }
+        };
+
+        Ok(())
+    }
 }
 
 impl Parser {
