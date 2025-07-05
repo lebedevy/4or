@@ -1,5 +1,5 @@
 use crate::{
-    environment::{Environment, EnvironmentError},
+    environment::{self, Environment, EnvironmentError},
     parser::{Expression, Literal, Statement},
     token::{Token, TokenType},
 };
@@ -40,7 +40,7 @@ impl Interpreter {
 
                 let identifier = match token.token_type {
                     TokenType::Identifier(iden) => iden,
-                    _ => return Err(InterpreterError::InvalidVariable(token)),
+                    _ => return Err(InterpreterError::InvalidVariableIdentifier(token)),
                 };
 
                 self.environment.define(
@@ -61,7 +61,7 @@ impl Interpreter {
 pub(super) enum InterpreterError {
     InvalidUnary(Token),
     InvalidBinary(Token),
-    InvalidVariable(Token),
+    InvalidVariableIdentifier(Token),
     UndefinedVariable(String),
 }
 
@@ -77,6 +77,7 @@ impl Evaluate for Expression {
             Expression::Literal(literal) => Ok(literal.clone()),
             Expression::Unary(token, expression) => unary(token, expression, environment),
             Expression::Variable(token) => variable(token, environment),
+            Expression::Assignment(token, expression) => assign(token, expression, environment),
         }
     }
 }
@@ -94,8 +95,23 @@ impl From<EnvironmentError> for InterpreterError {
 fn variable(token: &Token, environment: &Environment) -> Result<Literal, InterpreterError> {
     match &token.token_type {
         TokenType::Identifier(iden) => Ok(environment.get(iden)?),
-        _ => return Err(InterpreterError::InvalidVariable(token.clone())),
+        _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
     }
+}
+
+fn assign(
+    token: &Token,
+    expression: &Box<Expression>,
+    environment: &Environment,
+) -> Result<Literal, InterpreterError> {
+    let value = expression.evaluate(environment)?;
+
+    match &token.token_type {
+        TokenType::Identifier(iden) => environment.assign(iden, value)?,
+        _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
+    };
+
+    Ok(value)
 }
 
 fn binary(

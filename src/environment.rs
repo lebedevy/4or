@@ -17,6 +17,15 @@ impl Environment {
         self.values.insert(name, value);
     }
 
+    pub(super) fn assign(&mut self, name: &str, value: Literal) -> Result<(), EnvironmentError> {
+        match self.values.contains_key(name) {
+            true => self.values.insert(name, value),
+            false => return Err(EnvironmentError::UndefinedVariable(name.to_string())),
+        };
+
+        Ok(())
+    }
+
     pub(super) fn get(&self, name: &str) -> Result<Literal, EnvironmentError> {
         match self.values.get(name) {
             // TODO: probably shouldn't be cloning?
