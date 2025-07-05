@@ -91,7 +91,26 @@ impl Parser {
     }
 
     fn expression(tokens: &mut Peek) -> Result<Expression, ParserError> {
-        Parser::equality(tokens)
+        Parser::assignment(tokens)
+    }
+
+    fn assignment(tokens: &mut Peek) -> Result<Expression, ParserError> {
+        let expr = Parser::equality(tokens)?;
+
+        if let Some((_, equals)) = Parser::match_next(tokens, &vec![TokenType::Equal]) {
+            let value = Parser::expression(tokens)?;
+
+            // we can assign if the target is a variable expression; otherwise report error
+            match expr {
+                Expression::Variable(variable) => {
+                    return Ok(Expression::Assignment(variable, Box::new(value)));
+                }
+                // report error; do not throw it
+                _ => eprintln!("Invalid assignment target at {}", equals),
+            };
+        }
+
+        Ok(expr)
     }
 
     fn equality(tokens: &mut Peek) -> Result<Expression, ParserError> {
@@ -324,7 +343,7 @@ mod tests {
         )
     }
 
-    // variables
+    // declaration
     #[test]
     fn variable_assigned() -> Result<(), ParserError> {
         let parsed = Parser::parse(get_iter(vec![
@@ -405,6 +424,48 @@ mod tests {
             e,
             ParserError::UnexpectedToken(_, TokenType::Identifier(_))
         )));
+
+        Ok(())
+    }
+
+    // assignment
+    #[test]
+    fn assignment() -> Result<(), ParserError> {
+        // semicolon is not needed because this is an expression, not a statement
+        Parser::assignment(&mut get_iter(vec![
+            TokenType::Identifier("test".to_string()),
+            TokenType::Equal,
+            TokenType::True,
+        ]))?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn assignment_expression() -> Result<(), ParserError> {
+        Parser::assignment(&mut get_iter(vec![
+            TokenType::Identifier("test".to_string()),
+            TokenType::Equal,
+            TokenType::Number(4.0),
+            TokenType::Plus,
+            TokenType::Number(6.0),
+        ]))?;
+
+        Ok(())
+    }
+
+    // TODO: Need to test for failure condition, but no simple way to check console output w/out
+    // adding a crate
+    #[ignore]
+    #[test]
+    fn assignment_to_invalid_expression_prints_error() -> Result<(), ParserError> {
+        Parser::assignment(&mut get_iter(vec![
+            TokenType::Number(4.0),
+            TokenType::Plus,
+            TokenType::Number(6.0),
+            TokenType::Equal,
+            TokenType::Identifier("test".to_string()),
+        ]))?;
 
         Ok(())
     }

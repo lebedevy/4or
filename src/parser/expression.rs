@@ -9,6 +9,7 @@ pub(crate) enum Expression {
     Literal(Literal),
     Variable(Token),
     Unary(Token, Box<Expression>),
+    Assignment(Token, Box<Expression>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
