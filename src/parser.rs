@@ -60,29 +60,56 @@ impl Display for ParserError {
 impl Parser {
     pub(crate) fn parse(mut tokens: Peek) -> Result<Vec<Statement>, ParserError> {
         let mut statements = vec![];
-        while let Some((_, token)) = tokens.peek() {
-            let res = match token.token_type {
-                TokenType::Print => {
-                    tokens.next();
-                    Parser::print_statement(&mut tokens)
-                }
-                TokenType::Let => Parser::variable(&mut tokens),
-                _ => Parser::expression_statement(&mut tokens),
-            };
-
-            match res {
-                Ok(res) => statements.push(res),
-                Err(err) => {
-                    Parser::synchronize(&mut tokens);
-                    return Err(err);
-                }
-            }
+        while let Some(statement) = Parser::parse_statement(&mut tokens)? {
+            statements.push(statement);
         }
 
         Ok(statements)
     }
 
-    fn variable(tokens: &mut Peek) -> Result<Statement, ParserError> {
+    fn parse_statement(tokens: &mut Peek) -> Result<Option<Statement>, ParserError> {
+        let Some((_, token)) = tokens.peek() else {
+            return Ok(None);
+        };
+
+        let res = match token.token_type {
+            TokenType::Print => {
+                tokens.next();
+                Parser::print_statement(tokens)
+            }
+            TokenType::Let => Parser::declaration(tokens),
+            TokenType::LeftBrace => Parser::block(tokens),
+            _ => Parser::expression_statement(tokens),
+        };
+
+        match res {
+            Ok(res) => Ok(Some(res)),
+            Err(err) => {
+                println!("HERE - SYNC");
+                Parser::synchronize(tokens);
+                return Err(err);
+            }
+        }
+    }
+
+    fn block(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        let mut statements = vec![];
+
+        Parser::expect_match(tokens, TokenType::LeftBrace)?;
+
+        while matches!(tokens.peek(), Some((_, token)) if token.token_type != TokenType::RightBrace)
+        {
+            if let Some(statement) = Parser::parse_statement(tokens)? {
+                statements.push(statement);
+            }
+        }
+
+        Parser::expect_match(tokens, TokenType::RightBrace)?;
+
+        Ok(Statement::Block(statements))
+    }
+
+    fn declaration(tokens: &mut Peek) -> Result<Statement, ParserError> {
         Parser::expect_match(tokens, TokenType::Let)?;
         let Some((_, identifier)) = tokens.next() else {
             return Err(ParserError::ExpectedIdentifier(None));
@@ -498,6 +525,29 @@ mod tests {
             TokenType::Number(6.0),
             TokenType::Equal,
             TokenType::Identifier("test".to_string()),
+        ]))?;
+
+        Ok(())
+    }
+
+    // Blocks
+    #[test]
+    fn block() -> Result<(), ParserError> {
+        Parser::block(&mut get_iter(vec![
+            TokenType::LeftBrace,
+            TokenType::True,
+            TokenType::Semicolon,
+            TokenType::RightBrace,
+        ]))?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn block_emtpy() -> Result<(), ParserError> {
+        Parser::block(&mut get_iter(vec![
+            TokenType::LeftBrace,
+            TokenType::RightBrace,
         ]))?;
 
         Ok(())

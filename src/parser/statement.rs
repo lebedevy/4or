@@ -7,4 +7,5 @@ pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),
     Variable(Token, Option<Expression>),
+    Block(Vec<Statement>),
 }

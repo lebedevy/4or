@@ -1,6 +1,6 @@
 use std::{
     env,
-    fmt::{Display, write},
+    fmt::Display,
     io::{self, Write},
     process::exit,
 };

@@ -53,6 +53,15 @@ impl Interpreter {
                     },
                 );
             }
+            Statement::Block(statements) => {
+                self.environment.create_scope();
+
+                for statement in statements {
+                    self.execute(statement)?;
+                }
+
+                self.environment.pop_scope();
+            }
         };
 
         Ok(())
@@ -65,6 +74,7 @@ pub(super) enum InterpreterError {
     InvalidBinary(Token),
     InvalidVariableIdentifier(Token),
     UndefinedVariable(String),
+    UndefinedScope,
 }
 
 impl Display for InterpreterError {
@@ -86,6 +96,7 @@ impl Display for InterpreterError {
             InterpreterError::UndefinedVariable(name) => {
                 write!(f, "Interpreter error: Undefined variable - {}", name)?;
             }
+            InterpreterError::UndefinedScope => write!(f, "Undefined scope")?,
         };
 
         Ok(())
@@ -201,6 +212,7 @@ impl From<EnvironmentError> for InterpreterError {
             EnvironmentError::UndefinedVariable(value) => {
                 InterpreterError::UndefinedVariable(value)
             }
+            EnvironmentError::UndefinedScope => InterpreterError::UndefinedScope,
         }
     }
 }
