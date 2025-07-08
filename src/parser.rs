@@ -79,17 +79,41 @@ impl Parser {
             }
             TokenType::Let => Parser::declaration(tokens),
             TokenType::LeftBrace => Parser::block(tokens),
+            TokenType::If => Parser::if_statement(tokens),
             _ => Parser::expression_statement(tokens),
         };
 
         match res {
             Ok(res) => Ok(Some(res)),
             Err(err) => {
-                println!("HERE - SYNC");
                 Parser::synchronize(tokens);
                 return Err(err);
             }
         }
+    }
+
+    fn if_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        Parser::expect_match(tokens, TokenType::If)?;
+        let expression = Parser::expression(tokens)?;
+
+        let Some(statement) = Parser::parse_statement(tokens)? else {
+            return Err(ParserError::UnexpectedTermination);
+        };
+
+        let mut else_statement = None;
+
+        if let Some(_) = Parser::match_next(tokens, &vec![TokenType::Else]) {
+            else_statement = match Parser::parse_statement(tokens)? {
+                Some(statement) => Some(Box::new(statement)),
+                None => None,
+            }
+        }
+
+        Ok(Statement::If(
+            expression,
+            Box::new(statement),
+            else_statement,
+        ))
     }
 
     fn block(tokens: &mut Peek) -> Result<Statement, ParserError> {

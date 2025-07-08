@@ -51,7 +51,7 @@ impl Interpreter {
                         Some(val) => val,
                         None => Literal::Nil,
                     },
-                );
+                )?;
             }
             Statement::Block(statements) => {
                 self.environment.create_scope();
@@ -61,6 +61,20 @@ impl Interpreter {
                 }
 
                 self.environment.pop_scope();
+            }
+            Statement::If(expression, statement, else_statement) => {
+                match self.evaluate(expression)? {
+                    Literal::Bool(val) => {
+                        if val {
+                            self.execute(*statement)?;
+                        } else {
+                            if let Some(statement) = else_statement {
+                                self.execute(*statement)?;
+                            }
+                        }
+                    }
+                    token => return Err(InterpreterError::ExpectedBool(token)),
+                };
             }
         };
 
@@ -75,6 +89,7 @@ pub(super) enum InterpreterError {
     InvalidVariableIdentifier(Token),
     UndefinedVariable(String),
     UndefinedScope,
+    ExpectedBool(Literal),
 }
 
 impl Display for InterpreterError {
@@ -97,6 +112,9 @@ impl Display for InterpreterError {
                 write!(f, "Interpreter error: Undefined variable - {}", name)?;
             }
             InterpreterError::UndefinedScope => write!(f, "Undefined scope")?,
+            InterpreterError::ExpectedBool(literal) => {
+                write!(f, "Interpreter error: Expected bool, got '{}'", literal)?
+            }
         };
 
         Ok(())
