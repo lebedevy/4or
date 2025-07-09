@@ -86,6 +86,7 @@ impl Interpreter {
 pub(super) enum InterpreterError {
     InvalidUnary(Token),
     InvalidBinary(Token),
+    InvalidLogicalOperator(Token),
     InvalidVariableIdentifier(Token),
     UndefinedVariable(String),
     UndefinedScope,
@@ -115,6 +116,11 @@ impl Display for InterpreterError {
             InterpreterError::ExpectedBool(literal) => {
                 write!(f, "Interpreter error: Expected bool, got '{}'", literal)?
             }
+            InterpreterError::InvalidLogicalOperator(token) => write!(
+                f,
+                "Interpreter error: Expected 'and' or 'or', got '{}'",
+                token
+            )?,
         };
 
         Ok(())
@@ -130,7 +136,37 @@ impl Interpreter {
             Expression::Unary(token, expression) => self.unary(token, *expression),
             Expression::Variable(token) => self.variable(token),
             Expression::Assignment(token, expression) => self.assign(token, *expression),
+            Expression::Logical(left, operator, right) => self.logical(*left, operator, *right),
         }
+    }
+
+    fn logical(
+        &mut self,
+        left: Expression,
+        operator: Token,
+        right: Expression,
+    ) -> Result<Literal, InterpreterError> {
+        let left = match self.evaluate(left)? {
+            Literal::Bool(val) => val,
+            left => return Err(InterpreterError::ExpectedBool(left)),
+        };
+
+        // if and and false, return false; if or and true, return true
+        match &operator.token_type {
+            TokenType::And => {
+                if !left {
+                    return Ok(Literal::Bool(left));
+                }
+            }
+            TokenType::Or => {
+                if left {
+                    return Ok(Literal::Bool(left));
+                }
+            }
+            _ => return Err(InterpreterError::InvalidLogicalOperator(operator.clone())),
+        };
+
+        Ok(self.evaluate(right)?)
     }
 
     fn variable(&self, token: Token) -> Result<Literal, InterpreterError> {

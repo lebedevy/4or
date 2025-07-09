@@ -10,6 +10,7 @@ pub(crate) enum Expression {
     Variable(Token),
     Unary(Token, Box<Expression>),
     Assignment(Token, Box<Expression>),
+    Logical(Box<Expression>, Token, Box<Expression>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -179,7 +179,7 @@ impl Parser {
     }
 
     fn assignment(tokens: &mut Peek) -> Result<Expression, ParserError> {
-        let expr = Parser::equality(tokens)?;
+        let expr = Parser::logic_or(tokens)?;
 
         if let Some((_, equals)) = Parser::match_next(tokens, &vec![TokenType::Equal]) {
             let value = Parser::expression(tokens)?;
@@ -195,6 +195,28 @@ impl Parser {
         }
 
         Ok(expr)
+    }
+
+    fn logic_or(tokens: &mut Peek) -> Result<Expression, ParserError> {
+        let mut left = Parser::logic_and(tokens)?;
+
+        while let Some((_, operator)) = Parser::match_next(tokens, &vec![TokenType::Or]) {
+            let right = Parser::logic_and(tokens)?;
+            left = Expression::Logical(Box::new(left), operator, Box::new(right))
+        }
+
+        Ok(left)
+    }
+
+    fn logic_and(tokens: &mut Peek) -> Result<Expression, ParserError> {
+        let mut left = Parser::equality(tokens)?;
+
+        while let Some((_, operator)) = Parser::match_next(tokens, &vec![TokenType::And]) {
+            let right = Parser::equality(tokens)?;
+            left = Expression::Logical(Box::new(left), operator, Box::new(right))
+        }
+
+        Ok(left)
     }
 
     fn equality(tokens: &mut Peek) -> Result<Expression, ParserError> {
@@ -576,4 +598,38 @@ mod tests {
 
         Ok(())
     }
+
+    // or
+    #[test]
+    fn logic_or() -> Result<(), ParserError> {
+        let exp = Parser::logic_or(&mut get_iter(vec![
+            TokenType::True,
+            TokenType::Or,
+            TokenType::True,
+        ]))?;
+
+        assert!(
+            matches!(exp, Expression::Logical(_left, operation, _right) if operation.token_type == TokenType::Or)
+        );
+
+        Ok(())
+    }
+
+    // and
+    #[test]
+    fn logic_and() -> Result<(), ParserError> {
+        let exp = Parser::logic_and(&mut get_iter(vec![
+            TokenType::True,
+            TokenType::And,
+            TokenType::True,
+        ]))?;
+
+        assert!(
+            matches!(exp, Expression::Logical(_left, operation, _right) if operation.token_type == TokenType::And)
+        );
+
+        Ok(())
+    }
+
+    // TODO: Precedence tests
 }
