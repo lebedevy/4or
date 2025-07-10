@@ -22,10 +22,10 @@ impl Environment {
         self.scopes.pop();
     }
 
-    pub(super) fn define(&mut self, name: String, value: Literal) -> Result<(), EnvironmentError> {
+    pub(super) fn define(&mut self, name: &str, value: Literal) -> Result<(), EnvironmentError> {
         match self.scopes.last_mut() {
             Some(scope) => {
-                scope.insert(name, value);
+                scope.insert(name.to_string(), value);
             }
             None => return Err(EnvironmentError::UndefinedScope),
         };

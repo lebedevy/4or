@@ -19,30 +19,30 @@ impl Interpreter {
 
     pub(super) fn run(&mut self, statements: Vec<Statement>) -> Result<(), InterpreterError> {
         for statement in statements {
-            self.execute(statement)?;
+            self.execute(&statement)?;
         }
 
         Ok(())
     }
 
-    fn execute(&mut self, statement: Statement) -> Result<(), InterpreterError> {
+    fn execute(&mut self, statement: &Statement) -> Result<(), InterpreterError> {
         match statement {
             Statement::Expression(expression) => {
-                self.evaluate(expression)?;
+                self.evaluate(&expression)?;
             }
             Statement::Print(expression) => {
-                let val = self.evaluate(expression)?;
+                let val = self.evaluate(&expression)?;
                 println!("> {}", val);
             }
             Statement::Variable(token, expression) => {
                 let value = match expression {
-                    Some(expression) => Some(self.evaluate(expression)?),
+                    Some(expression) => Some(self.evaluate(&expression)?),
                     None => None,
                 };
 
-                let identifier = match token.token_type {
+                let identifier = match &token.token_type {
                     TokenType::Identifier(iden) => iden,
-                    _ => return Err(InterpreterError::InvalidVariableIdentifier(token)),
+                    _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
                 };
 
                 self.environment.define(
@@ -63,19 +63,31 @@ impl Interpreter {
                 self.environment.pop_scope();
             }
             Statement::If(expression, statement, else_statement) => {
-                match self.evaluate(expression)? {
+                match self.evaluate(&expression)? {
                     Literal::Bool(val) => {
                         if val {
-                            self.execute(*statement)?;
+                            self.execute(statement)?;
                         } else {
                             if let Some(statement) = else_statement {
-                                self.execute(*statement)?;
+                                self.execute(statement)?;
                             }
                         }
                     }
                     token => return Err(InterpreterError::ExpectedBool(token)),
                 };
             }
+            Statement::While(expression, statement) => loop {
+                match self.evaluate(&expression)? {
+                    Literal::Bool(condition) => {
+                        if !condition {
+                            break;
+                        }
+                    }
+                    condition => return Err(InterpreterError::ExpectedBool(condition)),
+                }
+
+                self.execute(statement)?;
+            },
         };
 
         Ok(())
@@ -128,23 +140,24 @@ impl Display for InterpreterError {
 }
 
 impl Interpreter {
-    fn evaluate(&mut self, expression: Expression) -> Result<Literal, InterpreterError> {
+    fn evaluate(&mut self, expression: &Expression) -> Result<Literal, InterpreterError> {
         match expression {
-            Expression::Binary(left, token, right) => self.binary(*left, token, *right),
-            Expression::Grouping(expression) => self.grouping(*expression),
-            Expression::Literal(literal) => Ok(literal),
-            Expression::Unary(token, expression) => self.unary(token, *expression),
+            Expression::Binary(left, token, right) => self.binary(left, token, right),
+            Expression::Grouping(expression) => self.grouping(expression),
+            // TODO: consider implications of cloning
+            Expression::Literal(literal) => Ok(literal.clone()),
+            Expression::Unary(token, expression) => self.unary(token, expression),
             Expression::Variable(token) => self.variable(token),
-            Expression::Assignment(token, expression) => self.assign(token, *expression),
-            Expression::Logical(left, operator, right) => self.logical(*left, operator, *right),
+            Expression::Assignment(token, expression) => self.assign(token, expression),
+            Expression::Logical(left, operator, right) => self.logical(left, operator, right),
         }
     }
 
     fn logical(
         &mut self,
-        left: Expression,
-        operator: Token,
-        right: Expression,
+        left: &Expression,
+        operator: &Token,
+        right: &Expression,
     ) -> Result<Literal, InterpreterError> {
         let left = match self.evaluate(left)? {
             Literal::Bool(val) => val,
@@ -169,7 +182,7 @@ impl Interpreter {
         Ok(self.evaluate(right)?)
     }
 
-    fn variable(&self, token: Token) -> Result<Literal, InterpreterError> {
+    fn variable(&self, token: &Token) -> Result<Literal, InterpreterError> {
         match &token.token_type {
             TokenType::Identifier(iden) => Ok(self.environment.get(iden)?),
             _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
@@ -178,8 +191,8 @@ impl Interpreter {
 
     fn assign(
         &mut self,
-        token: Token,
-        expression: Expression,
+        token: &Token,
+        expression: &Expression,
     ) -> Result<Literal, InterpreterError> {
         let value = self.evaluate(expression)?;
 
@@ -193,9 +206,9 @@ impl Interpreter {
 
     fn binary(
         &mut self,
-        left: Expression,
-        operator: Token,
-        right: Expression,
+        left: &Expression,
+        operator: &Token,
+        right: &Expression,
     ) -> Result<Literal, InterpreterError> {
         let left = self.evaluate(left)?;
         let right = self.evaluate(right)?;
@@ -203,33 +216,33 @@ impl Interpreter {
         // TODO: int overflow
         let res = match (&operator.token_type, left, right) {
             // Numeric
-            (TokenType::Minus, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::Minus, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Number(left - right)
             }
-            (TokenType::Plus, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::Plus, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Number(left + right)
             }
-            (TokenType::Slash, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::Slash, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Number(left / right)
             }
-            (TokenType::Star, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::Star, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Number(left * right)
             }
             // Strings
-            (TokenType::Plus, Literal::String(right), Literal::String(left)) => {
+            (TokenType::Plus, Literal::String(left), Literal::String(right)) => {
                 Literal::String(left + &right)
             }
             // Comparison
-            (TokenType::Greater, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::Greater, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Bool(left > right)
             }
-            (TokenType::GreaterEqual, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::GreaterEqual, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Bool(left >= right)
             }
-            (TokenType::Less, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::Less, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Bool(left < right)
             }
-            (TokenType::LessEqual, Literal::Number(right), Literal::Number(left)) => {
+            (TokenType::LessEqual, Literal::Number(left), Literal::Number(right)) => {
                 Literal::Bool(left <= right)
             }
             // Equality
@@ -242,7 +255,11 @@ impl Interpreter {
         Ok(res)
     }
 
-    fn unary(&mut self, token: Token, expression: Expression) -> Result<Literal, InterpreterError> {
+    fn unary(
+        &mut self,
+        token: &Token,
+        expression: &Expression,
+    ) -> Result<Literal, InterpreterError> {
         let right = self.evaluate(expression)?;
 
         let res = match (&token.token_type, right) {
@@ -255,7 +272,7 @@ impl Interpreter {
         Ok(res)
     }
 
-    fn grouping(&mut self, expression: Expression) -> Result<Literal, InterpreterError> {
+    fn grouping(&mut self, expression: &Expression) -> Result<Literal, InterpreterError> {
         self.evaluate(expression)
     }
 }
@@ -268,5 +285,61 @@ impl From<EnvironmentError> for InterpreterError {
             }
             EnvironmentError::UndefinedScope => InterpreterError::UndefinedScope,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        parser::{Expression, Literal},
+        token::{Token, TokenType},
+    };
+
+    use super::{Interpreter, InterpreterError};
+
+    fn get_interpreter() -> Interpreter {
+        Interpreter::new()
+    }
+
+    fn get_num_exp(num: f64) -> Expression {
+        Expression::Literal(Literal::Number(num))
+    }
+
+    fn get_token(token_type: TokenType) -> Token {
+        Token {
+            token_type,
+            index: 0,
+        }
+    }
+
+    #[test]
+    fn binary() -> Result<(), InterpreterError> {
+        let operations = vec![
+            (4.0, TokenType::Minus, 2.0, Literal::Number(2.0)),
+            (2.0, TokenType::Plus, 2.0, Literal::Number(4.0)),
+            (6.0, TokenType::Slash, 3.0, Literal::Number(2.0)),
+            (2.0, TokenType::Star, 3.0, Literal::Number(6.0)),
+            (4.0, TokenType::Greater, 2.0, Literal::Bool(true)),
+            (2.0, TokenType::GreaterEqual, 2.0, Literal::Bool(true)),
+            (4.0, TokenType::Less, 2.0, Literal::Bool(false)),
+            (2.0, TokenType::LessEqual, 2.0, Literal::Bool(true)),
+        ];
+
+        for (left, token, right, expected) in operations {
+            let result = get_interpreter().binary(
+                &get_num_exp(left),
+                &get_token(token),
+                &get_num_exp(right),
+            )?;
+
+            assert!(
+                result == expected,
+                "Did not return expected result; expected '{}' got '{}'",
+                result,
+                expected
+            );
+        }
+
+        Ok(())
     }
 }

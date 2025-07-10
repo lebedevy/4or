@@ -60,16 +60,17 @@ impl Display for ParserError {
 impl Parser {
     pub(crate) fn parse(mut tokens: Peek) -> Result<Vec<Statement>, ParserError> {
         let mut statements = vec![];
-        while let Some(statement) = Parser::parse_statement(&mut tokens)? {
-            statements.push(statement);
+
+        while let Some(_) = tokens.peek() {
+            statements.push(Parser::parse_statement(&mut tokens)?);
         }
 
         Ok(statements)
     }
 
-    fn parse_statement(tokens: &mut Peek) -> Result<Option<Statement>, ParserError> {
+    fn parse_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
         let Some((_, token)) = tokens.peek() else {
-            return Ok(None);
+            return Err(ParserError::UnexpectedTermination);
         };
 
         let res = match token.token_type {
@@ -80,11 +81,12 @@ impl Parser {
             TokenType::Let => Parser::declaration(tokens),
             TokenType::LeftBrace => Parser::block(tokens),
             TokenType::If => Parser::if_statement(tokens),
+            TokenType::While => Parser::while_statement(tokens),
             _ => Parser::expression_statement(tokens),
         };
 
         match res {
-            Ok(res) => Ok(Some(res)),
+            Ok(res) => Ok(res),
             Err(err) => {
                 Parser::synchronize(tokens);
                 return Err(err);
@@ -92,21 +94,25 @@ impl Parser {
         }
     }
 
+    fn while_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        Parser::expect_match(tokens, TokenType::While)?;
+
+        let condition = Parser::expression(tokens)?;
+        let statement = Parser::parse_statement(tokens)?;
+
+        Ok(Statement::While(condition, Box::new(statement)))
+    }
+
     fn if_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
         Parser::expect_match(tokens, TokenType::If)?;
         let expression = Parser::expression(tokens)?;
 
-        let Some(statement) = Parser::parse_statement(tokens)? else {
-            return Err(ParserError::UnexpectedTermination);
-        };
+        let statement = Parser::parse_statement(tokens)?;
 
         let mut else_statement = None;
 
         if let Some(_) = Parser::match_next(tokens, &vec![TokenType::Else]) {
-            else_statement = match Parser::parse_statement(tokens)? {
-                Some(statement) => Some(Box::new(statement)),
-                None => None,
-            }
+            else_statement = Some(Box::new(Parser::parse_statement(tokens)?));
         }
 
         Ok(Statement::If(
@@ -123,9 +129,7 @@ impl Parser {
 
         while matches!(tokens.peek(), Some((_, token)) if token.token_type != TokenType::RightBrace)
         {
-            if let Some(statement) = Parser::parse_statement(tokens)? {
-                statements.push(statement);
-            }
+            statements.push(Parser::parse_statement(tokens)?);
         }
 
         Parser::expect_match(tokens, TokenType::RightBrace)?;
@@ -227,7 +231,6 @@ impl Parser {
         )
     }
 
-    // TODO: This is the same function as above, except for the tokens we match
     fn comparison(tokens: &mut Peek) -> Result<Expression, ParserError> {
         Parser::consume(
             tokens,
@@ -428,6 +431,33 @@ mod tests {
     }
 
     // Compound rules
+    #[test]
+    fn binary() -> Result<(), ParserError> {
+        let operators = vec![
+            TokenType::Greater,
+            TokenType::GreaterEqual,
+            TokenType::Less,
+            TokenType::LessEqual,
+        ];
+
+        for expected in operators {
+            let exp = Parser::comparison(&mut get_iter(vec![
+                TokenType::True,
+                expected.clone(),
+                TokenType::True,
+            ]))?;
+
+            assert!(
+                matches!(&exp, Expression::Binary(_left, operator, _right) if operator.token_type == expected),
+                "Expected '{}' got '{:?}'",
+                expected,
+                exp
+            );
+        }
+
+        Ok(())
+    }
+
     // parenthesis
     #[test]
     fn closed_paren() -> Result<(), ParserError> {
