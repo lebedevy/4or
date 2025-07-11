@@ -6,8 +6,10 @@ use std::{
 };
 
 use interpreter::{Interpreter, InterpreterError};
+use itertools::min;
 use parser::{Parser, ParserError};
 use scanner::Scanner;
+use token::Token;
 
 mod environment;
 mod interpreter;
@@ -40,10 +42,45 @@ fn run_prompt() {
             break;
         }
 
-        if let Err(err) = run(&mut interpreter, input) {
+        if let Err(err) = run(&mut interpreter, input.clone()) {
+            match &err {
+                ProgramError::InterpreterError(interpreter_error) => match interpreter_error {
+                    InterpreterError::InvalidUnary(token) => print_token_error(input, token),
+                    InterpreterError::InvalidBinary(token) => print_token_error(input, token),
+                    InterpreterError::InvalidLogicalOperator(token) => {
+                        print_token_error(input, token)
+                    }
+                    InterpreterError::InvalidVariableIdentifier(token) => {
+                        print_token_error(input, token)
+                    }
+                    _ => (),
+                },
+                // TODO
+                ProgramError::ParseError(parser_error) => match parser_error {
+                    ParserError::UnexpectedToken(token, _token_type) => {
+                        if token.is_some() {
+                            print_token_error(input, &token.as_ref().unwrap());
+                        }
+                    }
+                    ParserError::InvalidPrimaryToken(token) => todo!(),
+                    ParserError::UnexpectedTermination => todo!(),
+                    ParserError::ExpectedIdentifier(token) => todo!(),
+                },
+            }
             eprintln!("{}", err);
         }
     }
+}
+
+fn print_token_error(input: String, token: &Token) {
+    let chars = input.chars();
+    let start = min(vec![0, token.index - 10]).expect("Could not get min");
+    let end = min(vec![input.len(), token.index + 10]).expect("Could not get min for end");
+    let start_spacing = " ".repeat(token.index - start);
+
+    // return 10 chars before and after
+    println!("{}", chars.skip(start).take(end).collect::<String>());
+    println!("{}^", start_spacing);
 }
 
 fn run_file(path: &String) {

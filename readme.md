@@ -6,3 +6,4 @@ A language interpreter by Yury Lebedev for the language `4or`, implemented with 
 - [ ] Remove global variables
 - [ ] Remove print statement
 - [ ] Empty expressions
+- [ ] Replace for loops with iterator loops 

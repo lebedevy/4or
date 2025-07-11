@@ -82,6 +82,7 @@ impl Parser {
             TokenType::LeftBrace => Parser::block(tokens),
             TokenType::If => Parser::if_statement(tokens),
             TokenType::While => Parser::while_statement(tokens),
+            TokenType::For => Parser::for_statement(tokens),
             _ => Parser::expression_statement(tokens),
         };
 
@@ -92,6 +93,53 @@ impl Parser {
                 return Err(err);
             }
         }
+    }
+
+    fn for_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        Parser::expect_match(tokens, TokenType::For)?;
+        Parser::expect_match(tokens, TokenType::LeftParen)?;
+
+        // Get the statements, in order
+        let mut initializer = None;
+        if Parser::match_next(tokens, &vec![TokenType::Semicolon]).is_none() {
+            initializer = match tokens.peek() {
+                Some((_, token)) if token.token_type == TokenType::Let => {
+                    Some(Parser::declaration(tokens)?)
+                }
+                _ => Some(Parser::expression_statement(tokens)?),
+            };
+        }
+
+        let mut condition = None;
+        if Parser::match_next(tokens, &vec![TokenType::Semicolon]).is_none() {
+            condition = Some(Parser::expression(tokens)?);
+            Parser::expect_match(tokens, TokenType::Semicolon)?;
+        }
+
+        let mut increment = None;
+        if Parser::match_next(tokens, &vec![TokenType::RightParen]).is_none() {
+            increment = Some(Parser::expression(tokens)?);
+            Parser::expect_match(tokens, TokenType::RightParen)?;
+        }
+
+        let body = Parser::parse_statement(tokens)?;
+
+        // compose the loop
+        let while_statement = Statement::While(
+            match condition {
+                Some(expr) => expr,
+                _ => Expression::Literal(Literal::Bool(true)),
+            },
+            Box::new(match increment {
+                Some(increment) => Statement::Block(vec![body, Statement::Expression(increment)]),
+                None => body,
+            }),
+        );
+
+        Ok(match initializer {
+            Some(initializer) => Statement::Block(vec![initializer, while_statement]),
+            None => while_statement,
+        })
     }
 
     fn while_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -352,6 +400,7 @@ mod tests {
 
     use crate::{
         parser::{Expression, Literal, Statement},
+        scanner::Scanner,
         token::{Token, TokenType},
     };
 
@@ -376,6 +425,13 @@ mod tests {
             .into_iter()
             .enumerate()
             .peekable()
+    }
+
+    fn get_iter_from_string(string: &str) -> Peek {
+        let mut scanner = Scanner::new(string.to_string());
+        let tokens = scanner.scan_tokens();
+
+        tokens.into_iter().enumerate().peekable()
     }
 
     // Single rules
@@ -657,6 +713,162 @@ mod tests {
         assert!(
             matches!(exp, Expression::Logical(_left, operation, _right) if operation.token_type == TokenType::And)
         );
+
+        Ok(())
+    }
+
+    // for loop
+    #[test]
+    fn for_loop_basic() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("for(;;){}");
+
+        let statement = Parser::for_statement(&mut tokens)?;
+
+        let (expr, statement) = match statement {
+            Statement::While(expr, statements) => (expr, statements),
+            _ => panic!("Expected statment to be of type While"),
+        };
+
+        assert!(
+            matches!(expr, Expression::Literal(val) if matches!(val, Literal::Bool(val) if val))
+        );
+
+        assert!(matches!(*statement, Statement::Block(val) if val.is_empty()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn for_loop_initializer() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("for(let i = 0;;){}");
+
+        let statement = Parser::for_statement(&mut tokens)?;
+
+        let statements = match statement {
+            Statement::Block(statements) => statements,
+            _ => panic!("Expected statment to be of type Block"),
+        };
+
+        let initializer = &statements[0];
+        let while_statement = &statements[1];
+
+        assert!(matches!(while_statement, Statement::While(..)));
+
+        matches!(initializer, Statement::Expression(exp) if matches!(exp, Expression::Variable(..)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn for_loop_condition() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("for(;false;){}");
+
+        let statement = Parser::for_statement(&mut tokens)?;
+
+        let (expr, _statement) = match statement {
+            Statement::While(expr, statements) => (expr, statements),
+            _ => panic!("Expected statment to be of type While"),
+        };
+
+        assert!(
+            matches!(expr, Expression::Literal(val) if matches!(val, Literal::Bool(val) if !val))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn for_loop_increment() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("for(;;false){}");
+
+        let statement = Parser::for_statement(&mut tokens)?;
+        let (_expr, statement) = match statement {
+            Statement::While(expr, statements) => (expr, statements),
+            _ => panic!("Expected statment to be of type While"),
+        };
+
+        let statements = match *statement {
+            Statement::Block(statements) => statements,
+            _ => panic!("Expected a block statement"),
+        };
+
+        let statement = match statements.last().expect("Expected increment statement") {
+            Statement::Expression(statements) => statements,
+            _ => panic!("Expected a block statement"),
+        };
+
+        assert!(
+            matches!(statement, Expression::Literal(val) if matches!(val, Literal::Bool(val) if !val))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn for_loop_body() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("for(;;){false;}");
+
+        let statement = Parser::for_statement(&mut tokens)?;
+
+        let (_expr, statement) = match statement {
+            Statement::While(expr, statements) => (expr, statements),
+            _ => panic!("Expected statment to be of type While"),
+        };
+
+        let statements = match *statement {
+            Statement::Block(statements) => statements,
+            _ => panic!("Expected a block statement"),
+        };
+
+        let statement = match statements.last().expect("Expected increment statement") {
+            Statement::Expression(statements) => statements,
+            _ => panic!("Expected a block statement"),
+        };
+
+        assert!(
+            matches!(statement, Expression::Literal(val) if matches!(val, Literal::Bool(val) if !val))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn for_loop_full() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("for(let i = 0; i < 10; i = i + 1) { print i; }");
+
+        let statement = Parser::for_statement(&mut tokens)?;
+
+        let mut statements = match statement {
+            Statement::Block(statements) => statements.into_iter(),
+            _ => panic!("Expected statment to be of type Block"),
+        };
+
+        let initializer = statements.next().expect("Missing initializer statement");
+
+        matches!(initializer, Statement::Expression(exp) if matches!(exp, Expression::Variable(..)));
+
+        let while_statement = statements.next().expect("Missing while loop");
+        let (expr, statement) = match while_statement {
+            Statement::While(expr, statement) => (expr, statement),
+            _ => panic!("Expected statment to be of type While"),
+        };
+
+        assert!(matches!(expr, Expression::Binary(..)));
+
+        let mut statements = match *statement {
+            Statement::Block(statements) => statements.into_iter(),
+            _ => panic!("Expected a block statement"),
+        };
+
+        assert!(matches!(
+            statements.next().expect("Missing print statement"),
+            Statement::Block(..)
+        ));
+
+        assert!(matches!(
+            statements.next().expect("Missing increment statement"),
+            Statement::Expression(..)
+        ));
 
         Ok(())
     }
