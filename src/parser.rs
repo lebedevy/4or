@@ -23,6 +23,7 @@ pub(super) enum ParserError {
     InvalidPrimaryToken(Token),
     UnexpectedTermination,
     ExpectedIdentifier(Option<Token>),
+    TooManyParameters(Option<Token>),
 }
 
 impl Display for ParserError {
@@ -51,6 +52,14 @@ impl Display for ParserError {
                     token.as_ref().map_or("None".to_string(), |x| x.to_string())
                 )?;
             }
+            ParserError::TooManyParameters(token) => write!(
+                f,
+                "Encountered too many parameters for fn at {}",
+                match token {
+                    Some(token) => format!("{}", token),
+                    None => "eof".into(),
+                }
+            )?,
         };
 
         Ok(())
@@ -78,6 +87,7 @@ impl Parser {
                 tokens.next();
                 Parser::print_statement(tokens)
             }
+            TokenType::Fn => Parser::function(tokens),
             TokenType::Let => Parser::declaration(tokens),
             TokenType::LeftBrace => Parser::block(tokens),
             TokenType::If => Parser::if_statement(tokens),
@@ -93,6 +103,39 @@ impl Parser {
                 return Err(err);
             }
         }
+    }
+
+    fn function(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        Parser::expect_match(tokens, TokenType::Fn)?;
+
+        let name = Parser::expect_identifier(tokens)?;
+
+        Parser::expect_match(tokens, TokenType::LeftParen)?;
+
+        let mut args = vec![];
+
+        if Parser::match_next(tokens, &vec![TokenType::RightParen]).is_none() {
+            loop {
+                args.push(Parser::expect_identifier(tokens)?);
+
+                if args.len() >= 255 {
+                    return Err(ParserError::TooManyParameters(match tokens.peek() {
+                        Some((_, t)) => Some(t.clone()),
+                        None => None,
+                    }));
+                }
+
+                if Parser::match_next(tokens, &vec![TokenType::Comma]).is_none() {
+                    break;
+                }
+            }
+            // Expect right paren since we haven't yet encountered it
+            Parser::expect_match(tokens, TokenType::RightParen)?;
+        }
+
+        let body = Parser::block(tokens)?;
+
+        Ok(Statement::Function(name, args, Box::new(body)))
     }
 
     fn for_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -316,7 +359,42 @@ impl Parser {
             return Ok(Expression::Unary(operator, Box::new(right)));
         }
 
-        return Parser::primary(tokens);
+        return Parser::call(tokens);
+    }
+
+    fn call(tokens: &mut Peek) -> Result<Expression, ParserError> {
+        let mut expr = Parser::primary(tokens)?;
+
+        while let Some(_) = Parser::match_next(tokens, &vec![TokenType::LeftParen]) {
+            expr = Parser::finish_call(tokens, expr)?;
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(tokens: &mut Peek, expr: Expression) -> Result<Expression, ParserError> {
+        let mut args = vec![];
+
+        if Parser::match_next(tokens, &vec![TokenType::RightParen]).is_none() {
+            loop {
+                args.push(Parser::expression(tokens)?);
+
+                if args.len() >= 255 {
+                    return Err(ParserError::TooManyParameters(match tokens.peek() {
+                        Some((_, t)) => Some(t.clone()),
+                        None => None,
+                    }));
+                }
+
+                if Parser::match_next(tokens, &vec![TokenType::Comma]).is_none() {
+                    break;
+                }
+            }
+            // Expect right paren since we haven't yet encountered it
+            Parser::expect_match(tokens, TokenType::RightParen)?;
+        }
+
+        Ok(Expression::Call(Box::new(expr), args))
     }
 
     // TODO: Consider empty expressions
@@ -391,6 +469,21 @@ impl Parser {
 
     fn match_next(tokens: &mut Peek, to_match: &Vec<TokenType>) -> Option<(usize, Token)> {
         tokens.next_if(|(_, ch)| to_match.contains(&ch.token_type))
+    }
+
+    fn expect_identifier(tokens: &mut Peek) -> Result<Token, ParserError> {
+        let token = match tokens.next() {
+            Some((_, token)) => Some(token),
+            None => None,
+        };
+
+        match token {
+            Some(token) if matches!(token.token_type, TokenType::Identifier(_)) => Ok(token),
+            token => Err(ParserError::UnexpectedToken(
+                token,
+                TokenType::Identifier("".to_string()),
+            )),
+        }
     }
 }
 
@@ -874,4 +967,92 @@ mod tests {
     }
 
     // TODO: Precedence tests
+
+    // Function statement
+    #[test]
+    fn function() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("fn test() {}");
+        Parser::function(&mut tokens)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn function_with_args() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("fn test(var1, var2, var3) {}");
+        Parser::function(&mut tokens)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn function_extra_comma() -> Result<(), ParserError> {
+        let invalid = [
+            "fn test(var1, var2,) {}",
+            "fn test(var1, var2 {}",
+            "fn () {}",
+            "fn ) {}",
+            "fn () }",
+            "fn () {",
+        ];
+
+        for i in invalid {
+            let mut tokens = get_iter_from_string(i);
+            let res = Parser::function(&mut tokens);
+
+            assert!(matches!(res, Err(err) if matches!(err,  ParserError::UnexpectedToken(_, _))));
+        }
+        Ok(())
+    }
+
+    // call function
+    #[test]
+    fn call() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("test()");
+        Parser::call(&mut tokens)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn call_args() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("test(1 + 2, var2)");
+        Parser::call(&mut tokens)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn call_invalid() -> Result<(), ParserError> {
+        let invalid = [
+            // "test)", // TODO: This should probably be invalid
+            "test(var1,)",
+        ];
+
+        for i in invalid {
+            let mut tokens = get_iter_from_string(i);
+            let res = Parser::call(&mut tokens);
+
+            assert!(
+                matches!(&res, Err(err) if matches!(err,  ParserError::InvalidPrimaryToken(_))),
+                "Unable to validate results for {}; got {:?}",
+                i,
+                res
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn call_invalid_termination() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("test(");
+        let res = Parser::call(&mut tokens);
+
+        assert!(
+            matches!(&res, Err(err) if matches!(err,  ParserError::UnexpectedTermination)),
+            "Unable to validate results; got {:?}",
+            res
+        );
+        Ok(())
+    }
 }

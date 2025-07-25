@@ -65,6 +65,7 @@ fn run_prompt() {
                     ParserError::InvalidPrimaryToken(token) => todo!(),
                     ParserError::UnexpectedTermination => todo!(),
                     ParserError::ExpectedIdentifier(token) => todo!(),
+                    ParserError::TooManyParameters(_) => todo!(),
                 },
             }
             eprintln!("{}", err);

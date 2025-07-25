@@ -11,6 +11,7 @@ pub(crate) enum Expression {
     Unary(Token, Box<Expression>),
     Assignment(Token, Box<Expression>),
     Logical(Box<Expression>, Token, Box<Expression>),
+    Call(Box<Expression>, Vec<Expression>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

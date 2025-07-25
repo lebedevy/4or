@@ -125,6 +125,7 @@ impl Token {
         if matches!(iter.peek(), Some((ind, ch)) if cmp(ind, ch)) {
             return iter.next();
         }
+        iter.reset_peek();
         return None;
     }
 
