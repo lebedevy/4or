@@ -2,7 +2,7 @@ use crate::token::Token;
 
 use super::Expression;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),

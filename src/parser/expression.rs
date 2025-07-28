@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use crate::token::Token;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),

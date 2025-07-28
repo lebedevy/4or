@@ -147,7 +147,6 @@ impl Token {
         if matches!(iter.peek(), Some((_, ch)) if ch == &'.')
             && matches!(iter.peek(), Some((_, ch)) if ch.is_digit(10))
         {
-            println!("HERE");
             // consume '.' and the following digits
             iter.next();
             text.push('.');

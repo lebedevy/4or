@@ -1,7 +1,7 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    environment::{Environment, EnvironmentError},
+    environment::{Environment, EnvironmentError, FnRef, ReferenceTypes, Types},
     parser::{Expression, Literal, Statement},
     token::{Token, TokenType},
 };
@@ -36,8 +36,8 @@ impl Interpreter {
             }
             Statement::Variable(token, expression) => {
                 let value = match expression {
-                    Some(expression) => Some(self.evaluate(&expression)?),
-                    None => None,
+                    Some(expression) => self.evaluate(&expression)?,
+                    None => Types::Primitive(Literal::Nil),
                 };
 
                 let identifier = match &token.token_type {
@@ -45,13 +45,7 @@ impl Interpreter {
                     _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
                 };
 
-                self.environment.define(
-                    identifier,
-                    match value {
-                        Some(val) => val,
-                        None => Literal::Nil,
-                    },
-                )?;
+                self.environment.define(identifier, value)?;
             }
             Statement::Block(statements) => {
                 self.environment.create_scope();
@@ -63,22 +57,24 @@ impl Interpreter {
                 self.environment.pop_scope();
             }
             Statement::If(expression, statement, else_statement) => {
-                match self.evaluate(&expression)? {
-                    Literal::Bool(val) => {
-                        if val {
-                            self.execute(statement)?;
-                        } else {
-                            if let Some(statement) = else_statement {
-                                self.execute(statement)?;
-                            }
-                        }
+                let val = match self.evaluate(&expression)? {
+                    Types::Primitive(Literal::Bool(bool)) => bool,
+                    val => {
+                        return Err(InterpreterError::ExpectedBool(val));
                     }
-                    token => return Err(InterpreterError::ExpectedBool(token)),
                 };
+
+                if val {
+                    self.execute(statement)?;
+                } else {
+                    if let Some(statement) = else_statement {
+                        self.execute(statement)?;
+                    }
+                }
             }
             Statement::While(expression, statement) => loop {
                 match self.evaluate(&expression)? {
-                    Literal::Bool(condition) => {
+                    Types::Primitive(Literal::Bool(condition)) => {
                         if !condition {
                             break;
                         }
@@ -88,6 +84,24 @@ impl Interpreter {
 
                 self.execute(statement)?;
             },
+            Statement::Function(name, params, body) => {
+                // fn declaration
+                let name = match &name.token_type {
+                    TokenType::Identifier(name) => name,
+                    _ => return Err(InterpreterError::InvalidVariableIdentifier(name.clone())),
+                };
+
+                let params = params.iter().map(|x| x.clone()).collect();
+
+                self.environment.define(
+                    name.as_str(),
+                    Types::Reference(ReferenceTypes::Function(Arc::new(FnRef::new(
+                        name.as_str(),
+                        params,
+                        body.clone(),
+                    )))),
+                )?;
+            }
         };
 
         Ok(())
@@ -102,7 +116,10 @@ pub(super) enum InterpreterError {
     InvalidVariableIdentifier(Token),
     UndefinedVariable(String),
     UndefinedScope,
-    ExpectedBool(Literal),
+    ExpectedBool(Types),
+    NotAFunction(Types),
+    InvalidFunctionBody(String),
+    InvalidFunctionCall(String),
 }
 
 impl Display for InterpreterError {
@@ -133,6 +150,13 @@ impl Display for InterpreterError {
                 "Interpreter error: Expected 'and' or 'or', got '{}'",
                 token
             )?,
+            InterpreterError::NotAFunction(types) => {
+                write!(f, "Attempting to call a non-function object {}", types)?
+            }
+            InterpreterError::InvalidFunctionBody(name) => {
+                write!(f, "Invalid function body for function '{}'", name)?
+            }
+            InterpreterError::InvalidFunctionCall(err) => write!(f, "{}", err)?,
         };
 
         Ok(())
@@ -140,17 +164,70 @@ impl Display for InterpreterError {
 }
 
 impl Interpreter {
-    fn evaluate(&mut self, expression: &Expression) -> Result<Literal, InterpreterError> {
+    fn evaluate(&mut self, expression: &Expression) -> Result<Types, InterpreterError> {
         match expression {
             Expression::Binary(left, token, right) => self.binary(left, token, right),
             Expression::Grouping(expression) => self.grouping(expression),
             // TODO: consider implications of cloning
-            Expression::Literal(literal) => Ok(literal.clone()),
+            Expression::Literal(literal) => Ok(Types::Primitive(literal.clone())),
             Expression::Unary(token, expression) => self.unary(token, expression),
             Expression::Variable(token) => self.variable(token),
             Expression::Assignment(token, expression) => self.assign(token, expression),
             Expression::Logical(left, operator, right) => self.logical(left, operator, right),
+            Expression::Call(expression, args) => self.call_function(expression, args),
         }
+    }
+
+    fn call_function(
+        &mut self,
+        expression: &Expression,
+        args: &Vec<Expression>,
+    ) -> Result<Types, InterpreterError> {
+        let callee = self.evaluate(expression)?;
+
+        let callee = match callee {
+            Types::Reference(ReferenceTypes::Function(func)) => func,
+            _ => return Err(InterpreterError::NotAFunction(callee)),
+        };
+
+        // Execute body with its own scope
+        self.environment.create_scope();
+
+        if callee.params.len() != args.len() {
+            return Err(InterpreterError::InvalidFunctionCall(
+                "Invalid arg count".to_string(),
+            ));
+        }
+
+        for (param, arg) in callee.params.iter().zip(args) {
+            let param = match &param.token_type {
+                TokenType::Identifier(iden) => iden,
+                _ => {
+                    return Err(InterpreterError::InvalidFunctionCall(
+                        "invalid param defintion".to_string(),
+                    ));
+                }
+            };
+            let val = self.evaluate(arg)?;
+            self.environment.define(param.as_str(), val)?;
+        }
+
+        let statements = match callee.body.as_ref() {
+            Statement::Block(statements) => statements,
+            _ => {
+                return Err(InterpreterError::InvalidFunctionBody(
+                    callee.name.to_string(),
+                ));
+            }
+        };
+
+        for statement in statements {
+            self.execute(&statement)?;
+        }
+
+        self.environment.pop_scope();
+
+        Ok(Types::Primitive(Literal::Nil))
     }
 
     fn logical(
@@ -158,9 +235,9 @@ impl Interpreter {
         left: &Expression,
         operator: &Token,
         right: &Expression,
-    ) -> Result<Literal, InterpreterError> {
+    ) -> Result<Types, InterpreterError> {
         let left = match self.evaluate(left)? {
-            Literal::Bool(val) => val,
+            Types::Primitive(Literal::Bool(val)) => val,
             left => return Err(InterpreterError::ExpectedBool(left)),
         };
 
@@ -168,12 +245,12 @@ impl Interpreter {
         match &operator.token_type {
             TokenType::And => {
                 if !left {
-                    return Ok(Literal::Bool(left));
+                    return Ok(Types::Primitive(Literal::Bool(left)));
                 }
             }
             TokenType::Or => {
                 if left {
-                    return Ok(Literal::Bool(left));
+                    return Ok(Types::Primitive(Literal::Bool(left)));
                 }
             }
             _ => return Err(InterpreterError::InvalidLogicalOperator(operator.clone())),
@@ -182,7 +259,7 @@ impl Interpreter {
         Ok(self.evaluate(right)?)
     }
 
-    fn variable(&self, token: &Token) -> Result<Literal, InterpreterError> {
+    fn variable(&self, token: &Token) -> Result<Types, InterpreterError> {
         match &token.token_type {
             TokenType::Identifier(iden) => Ok(self.environment.get(iden)?),
             _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
@@ -193,7 +270,7 @@ impl Interpreter {
         &mut self,
         token: &Token,
         expression: &Expression,
-    ) -> Result<Literal, InterpreterError> {
+    ) -> Result<Types, InterpreterError> {
         let value = self.evaluate(expression)?;
 
         match &token.token_type {
@@ -209,9 +286,14 @@ impl Interpreter {
         left: &Expression,
         operator: &Token,
         right: &Expression,
-    ) -> Result<Literal, InterpreterError> {
+    ) -> Result<Types, InterpreterError> {
         let left = self.evaluate(left)?;
         let right = self.evaluate(right)?;
+
+        let (left, right) = match (left, right) {
+            (Types::Primitive(left), Types::Primitive(right)) => (left, right),
+            _ => return Err(InterpreterError::InvalidBinary(operator.clone())),
+        };
 
         // TODO: int overflow
         let res = match (&operator.token_type, left, right) {
@@ -252,27 +334,23 @@ impl Interpreter {
             _val => return Err(InterpreterError::InvalidBinary(operator.clone())),
         };
 
-        Ok(res)
+        Ok(Types::Primitive(res))
     }
 
-    fn unary(
-        &mut self,
-        token: &Token,
-        expression: &Expression,
-    ) -> Result<Literal, InterpreterError> {
+    fn unary(&mut self, token: &Token, expression: &Expression) -> Result<Types, InterpreterError> {
         let right = self.evaluate(expression)?;
 
         let res = match (&token.token_type, right) {
-            (TokenType::Minus, Literal::Number(num)) => Literal::Number(-num),
+            (TokenType::Minus, Types::Primitive(Literal::Number(num))) => Literal::Number(-num),
             // We are not allowing the concept of "truthiness"; give me bool or get bonked
-            (TokenType::Bang, Literal::Bool(val)) => Literal::Bool(!val),
+            (TokenType::Bang, Types::Primitive(Literal::Bool(val))) => Literal::Bool(!val),
             _val => return Err(InterpreterError::InvalidUnary(token.clone())),
         };
 
-        Ok(res)
+        Ok(Types::Primitive(res))
     }
 
-    fn grouping(&mut self, expression: &Expression) -> Result<Literal, InterpreterError> {
+    fn grouping(&mut self, expression: &Expression) -> Result<Types, InterpreterError> {
         self.evaluate(expression)
     }
 }
@@ -291,6 +369,7 @@ impl From<EnvironmentError> for InterpreterError {
 #[cfg(test)]
 mod tests {
     use crate::{
+        environment::Types,
         parser::{Expression, Literal},
         token::{Token, TokenType},
     };
@@ -331,6 +410,13 @@ mod tests {
                 &get_token(token),
                 &get_num_exp(right),
             )?;
+
+            let result = match result {
+                Types::Primitive(literal) => literal,
+                Types::Reference(reference_types) => {
+                    panic!("Unexpected reference '{}'", reference_types)
+                }
+            };
 
             assert!(
                 result == expected,

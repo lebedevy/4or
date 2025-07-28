@@ -1,9 +1,57 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use crate::parser::Literal;
+use crate::{
+    parser::{Literal, Statement},
+    token::Token,
+};
+
+#[derive(Debug, Clone)]
+pub(super) enum Types {
+    Primitive(Literal),
+    Reference(ReferenceTypes),
+}
+
+impl Display for Types {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Types::Primitive(literal) => write!(f, "{}", literal.to_string()),
+            Types::Reference(reference_types) => write!(f, "{}", reference_types.to_string()),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct FnRef {
+    pub(super) name: String,
+    pub(super) params: Vec<Token>,
+    pub(super) body: Box<Statement>,
+}
+
+impl FnRef {
+    pub(super) fn new(name: &str, params: Vec<Token>, body: Box<Statement>) -> Self {
+        Self {
+            name: name.to_string(),
+            params,
+            body,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum ReferenceTypes {
+    Function(Arc<FnRef>),
+}
+
+impl Display for ReferenceTypes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReferenceTypes::Function(func) => write!(f, "Fn '{}' reference", func.name),
+        }
+    }
+}
 
 pub(super) struct Environment {
-    scopes: Vec<HashMap<String, Literal>>,
+    scopes: Vec<HashMap<String, Types>>,
 }
 
 impl Environment {
@@ -22,7 +70,7 @@ impl Environment {
         self.scopes.pop();
     }
 
-    pub(super) fn define(&mut self, name: &str, value: Literal) -> Result<(), EnvironmentError> {
+    pub(super) fn define(&mut self, name: &str, value: Types) -> Result<(), EnvironmentError> {
         match self.scopes.last_mut() {
             Some(scope) => {
                 scope.insert(name.to_string(), value);
@@ -33,7 +81,7 @@ impl Environment {
         Ok(())
     }
 
-    pub(super) fn assign(&mut self, name: &str, value: Literal) -> Result<(), EnvironmentError> {
+    pub(super) fn assign(&mut self, name: &str, value: Types) -> Result<(), EnvironmentError> {
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains_key(name) {
                 scope.insert(name.to_string(), value);
@@ -44,10 +92,10 @@ impl Environment {
         Err(EnvironmentError::UndefinedVariable(name.to_string()))
     }
 
-    pub(super) fn get(&self, name: &str) -> Result<Literal, EnvironmentError> {
+    pub(super) fn get(&self, name: &str) -> Result<Types, EnvironmentError> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
-                // TODO: probably shouldn't be cloning
+                // TODO: Think more about cloning
                 return Ok(value.clone());
             }
         }
