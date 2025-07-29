@@ -6,12 +6,12 @@ use crate::{
     token::{Token, TokenType},
 };
 
-pub(super) struct Interpreter {
+pub struct Interpreter {
     environment: Environment,
 }
 
 impl Interpreter {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             environment: Environment::new(),
         }
