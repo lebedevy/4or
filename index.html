@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+  <head>
+	<link data-trunk rel="rust" data-target-name="web" />
+	<style>
+		* {
+		 padding: 0;
+		 margin: 0;
+		 box-sizing: border-box;
+		}
+		.editor {
+		 background-color: black;
+		 color: white;
+		 height: 100vh;
+		 width: 100vw;
+		}
+		.flex {
+		 display: flex;
+		}
+		.blinker {
+		 width: 8px;
+		 height: 1em;
+		 background-color: white;
+		}
+		.blink {
+ 		 animation: blink-animation 1s steps(5, start) infinite;
+		}
+		@keyframes blink-animation {
+  		 to {
+    		  visibility: hidden;
+  		 }
+		}
+	</style>
+  </head>
+  <body></body>
+</html>
+

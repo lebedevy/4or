@@ -2,6 +2,17 @@
 name = "four_4or"
 version = "0.1.0"
 edition = "2024"
+default-run="console"
 
 [dependencies]
+# TODO: consider fruther restructuring to prevent dependency bleed https://stackoverflow.com/a/47113822
 itertools = "0.14.0"
+leptos = { version = "0.8.6", features = ["csr"] }
+
+[[bin]]
+name = "web"
+path = "src/web.rs"
+
+[[bin]]
+name = "console"
+path = "src/main.rs"

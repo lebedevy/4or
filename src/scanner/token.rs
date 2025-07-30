@@ -108,6 +108,8 @@ impl Token {
             }
         };
 
+        iter.reset_peek();
+
         Ok(token)
     }
 

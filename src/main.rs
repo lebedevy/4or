@@ -32,7 +32,7 @@ fn run_prompt() {
         }
 
         if let Err(err) = run(&mut interpreter, input.clone()) {
-            err.print_error(&input);
+            eprintln!("{}", err.get_error_text(&input));
         }
     }
 }
