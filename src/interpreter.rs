@@ -10,6 +10,12 @@ pub struct Interpreter {
     environment: Environment,
 }
 
+enum Return {
+    Expression(Types),
+    Return(Types),
+    None,
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         Self {
@@ -25,10 +31,10 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute(&mut self, statement: &Statement) -> Result<(), InterpreterError> {
+    fn execute(&mut self, statement: &Statement) -> Result<Return, InterpreterError> {
         match statement {
             Statement::Expression(expression) => {
-                self.evaluate(&expression)?;
+                return Ok(Return::Expression(self.evaluate(&expression)?));
             }
             Statement::Print(expression) => {
                 let val = self.evaluate(&expression)?;
@@ -51,7 +57,10 @@ impl Interpreter {
                 self.environment.create_scope();
 
                 for statement in statements {
-                    self.execute(statement)?;
+                    if let Return::Return(r_val) = self.execute(statement)? {
+                        self.environment.pop_scope();
+                        return Ok(Return::Return(r_val));
+                    }
                 }
 
                 self.environment.pop_scope();
@@ -64,12 +73,16 @@ impl Interpreter {
                     }
                 };
 
-                if val {
-                    self.execute(statement)?;
+                let r_val = if val {
+                    self.execute(statement)?
+                } else if let Some(statement) = else_statement {
+                    self.execute(statement)?
                 } else {
-                    if let Some(statement) = else_statement {
-                        self.execute(statement)?;
-                    }
+                    Return::None
+                };
+
+                if let Return::Return(r_val) = self.execute(statement)? {
+                    return Ok(Return::Return(r_val));
                 }
             }
             Statement::While(expression, statement) => loop {
@@ -82,7 +95,9 @@ impl Interpreter {
                     condition => return Err(InterpreterError::ExpectedBool(condition)),
                 }
 
-                self.execute(statement)?;
+                if let Return::Return(r_val) = self.execute(statement)? {
+                    return Ok(Return::Return(r_val));
+                }
             },
             Statement::Function(name, params, body) => {
                 // fn declaration
@@ -102,9 +117,15 @@ impl Interpreter {
                     )))),
                 )?;
             }
+            Statement::Return(token, statement) => {
+                return Ok(Return::Return(match self.execute(statement)? {
+                    Return::Expression(val) | Return::Return(val) => val,
+                    Return::None => Types::Primitive(Literal::Nil),
+                }));
+            }
         };
 
-        Ok(())
+        Ok(Return::None)
     }
 }
 
@@ -222,7 +243,9 @@ impl Interpreter {
         };
 
         for statement in statements {
-            self.execute(&statement)?;
+            if let Return::Return(val) = self.execute(&statement)? {
+                return Ok(val);
+            }
         }
 
         self.environment.pop_scope();

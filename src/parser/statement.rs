@@ -11,4 +11,5 @@ pub(crate) enum Statement {
     Function(Token, Vec<Token>, Box<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
+    Return(Token, Box<Statement>),
 }

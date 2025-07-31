@@ -93,6 +93,7 @@ impl Parser {
             TokenType::If => Parser::if_statement(tokens),
             TokenType::While => Parser::while_statement(tokens),
             TokenType::For => Parser::for_statement(tokens),
+            TokenType::Return => Parser::return_statement(tokens),
             _ => Parser::expression_statement(tokens),
         };
 
@@ -103,6 +104,18 @@ impl Parser {
                 return Err(err);
             }
         }
+    }
+
+    fn return_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
+        let token = Parser::expect_match(tokens, TokenType::Return)?;
+
+        let mut return_value = Statement::Expression(Expression::Literal(Literal::Nil));
+
+        if Parser::match_next(tokens, &vec![TokenType::Semicolon]).is_none() {
+            return_value = Parser::expression_statement(tokens)?;
+        }
+
+        Ok(Statement::Return(token, Box::new(return_value)))
     }
 
     fn function(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -981,6 +994,17 @@ mod tests {
     fn function_with_args() -> Result<(), ParserError> {
         let mut tokens = get_iter_from_string("fn test(var1, var2, var3) {}");
         Parser::function(&mut tokens)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn function_with_return() -> Result<(), ParserError> {
+        let mut tokens = get_iter_from_string("fn test() { return 1; }");
+
+        let tokens = Parser::function(&mut tokens)?;
+
+        dbg!(&tokens);
 
         Ok(())
     }
