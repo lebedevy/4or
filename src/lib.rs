@@ -35,7 +35,11 @@ pub enum ProgramError {
 fn get_token_error_text(input: &str, token: &Token) -> String {
     let mut text = "".to_owned();
     let chars = input.chars();
-    let start = min(vec![0, token.index - 10]).expect("Could not get min");
+    let start = if token.index < 10 {
+        0
+    } else {
+        token.index - 10
+    };
     let end = min(vec![input.len(), token.index + 10]).expect("Could not get min for end");
     let start_spacing = " ".repeat(token.index - start);
 
