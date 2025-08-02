@@ -193,7 +193,6 @@ impl Token {
             "fn" => TokenType::Fn,
             "if" => TokenType::If,
             "nil" => TokenType::Nil,
-            "print" => TokenType::Print,
             "return" => TokenType::Return,
             "super" => TokenType::Super,
             "this" => TokenType::This,

@@ -5,7 +5,6 @@ use super::Expression;
 #[derive(Debug, Clone)]
 pub(crate) enum Statement {
     Expression(Expression),
-    Print(Expression),
     Variable(Token, Option<Expression>),
     Block(Vec<Statement>),
     Function(Token, Vec<Token>, Box<Statement>),

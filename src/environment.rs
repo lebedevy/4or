@@ -1,54 +1,9 @@
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use crate::{
-    parser::{Literal, Statement},
-    token::Token,
+use crate::interpreter::{
+    function::{Fun, native::PrintFn},
+    types::{ReferenceTypes, Types},
 };
-
-#[derive(Debug, Clone)]
-pub(super) enum Types {
-    Primitive(Literal),
-    Reference(ReferenceTypes),
-}
-
-impl Display for Types {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Types::Primitive(literal) => write!(f, "{}", literal.to_string()),
-            Types::Reference(reference_types) => write!(f, "{}", reference_types.to_string()),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct FnRef {
-    pub(super) name: String,
-    pub(super) params: Vec<Token>,
-    pub(super) body: Box<Statement>,
-}
-
-impl FnRef {
-    pub(super) fn new(name: &str, params: Vec<Token>, body: Box<Statement>) -> Self {
-        Self {
-            name: name.to_string(),
-            params,
-            body,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum ReferenceTypes {
-    Function(Arc<FnRef>),
-}
-
-impl Display for ReferenceTypes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReferenceTypes::Function(func) => write!(f, "Fn '{}' reference", func.name),
-        }
-    }
-}
 
 pub(super) struct Environment {
     scopes: Vec<HashMap<String, Types>>,
@@ -56,8 +11,17 @@ pub(super) struct Environment {
 
 impl Environment {
     pub(super) fn new() -> Self {
+        let print_fn = PrintFn::new();
+
         Self {
-            scopes: vec![HashMap::new()],
+            scopes: vec![
+                vec![(
+                    print_fn.get_name().to_string(),
+                    Types::Reference(ReferenceTypes::Function(Arc::new(print_fn))),
+                )]
+                .into_iter()
+                .collect(),
+            ],
         }
     }
 

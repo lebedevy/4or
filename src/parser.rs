@@ -83,10 +83,6 @@ impl Parser {
         };
 
         let res = match token.token_type {
-            TokenType::Print => {
-                tokens.next();
-                Parser::print_statement(tokens)
-            }
             TokenType::Fn => Parser::function(tokens),
             TokenType::Let => Parser::declaration(tokens),
             TokenType::LeftBrace => Parser::block(tokens),
@@ -268,12 +264,6 @@ impl Parser {
         Parser::expect_match(tokens, TokenType::Semicolon)?;
 
         Ok(Statement::Variable(identifier, initial))
-    }
-
-    fn print_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
-        let value = Parser::expression(tokens)?;
-        Parser::expect_match(tokens, TokenType::Semicolon)?;
-        Ok(Statement::Print(value))
     }
 
     fn expression_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -459,7 +449,6 @@ impl Parser {
                 TokenType::Fn => return (),
                 TokenType::For => return (),
                 TokenType::If => return (),
-                TokenType::Print => return (),
                 TokenType::Return => return (),
                 TokenType::Let => return (),
                 TokenType::While => return (),

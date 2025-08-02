@@ -15,6 +15,6 @@ trunk serve --open
 
 # TODO
 - [ ] Remove global variables
-- [ ] Remove print statement
+- [x] Remove print statement
 - [ ] Empty expressions
 - [ ] Replace for loops with iterator loops 

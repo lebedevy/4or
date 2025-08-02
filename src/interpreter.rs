@@ -1,10 +1,17 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    environment::{Environment, EnvironmentError, FnRef, ReferenceTypes, Types},
+    environment::{Environment, EnvironmentError},
+    interpreter::{
+        function::UserFn,
+        types::{ReferenceTypes, Types},
+    },
     parser::{Expression, Literal, Statement},
     token::{Token, TokenType},
 };
+
+pub(super) mod function;
+pub(crate) mod types;
 
 pub struct Interpreter {
     environment: Environment,
@@ -35,10 +42,6 @@ impl Interpreter {
         match statement {
             Statement::Expression(expression) => {
                 return Ok(Return::Expression(self.evaluate(&expression)?));
-            }
-            Statement::Print(expression) => {
-                let val = self.evaluate(&expression)?;
-                println!("> {}", val);
             }
             Statement::Variable(token, expression) => {
                 let value = match expression {
@@ -110,14 +113,14 @@ impl Interpreter {
 
                 self.environment.define(
                     name.as_str(),
-                    Types::Reference(ReferenceTypes::Function(Arc::new(FnRef::new(
+                    Types::Reference(ReferenceTypes::Function(Arc::new(UserFn::new(
                         name.as_str(),
                         params,
                         body.clone(),
                     )))),
                 )?;
             }
-            Statement::Return(token, statement) => {
+            Statement::Return(_token, statement) => {
                 return Ok(Return::Return(match self.execute(statement)? {
                     Return::Expression(val) | Return::Return(val) => val,
                     Return::None => Types::Primitive(Literal::Nil),
@@ -214,13 +217,15 @@ impl Interpreter {
         // Execute body with its own scope
         self.environment.create_scope();
 
-        if callee.params.len() != args.len() {
+        let params = callee.get_params();
+
+        if params.len() != args.len() {
             return Err(InterpreterError::InvalidFunctionCall(
                 "Invalid arg count".to_string(),
             ));
         }
 
-        for (param, arg) in callee.params.iter().zip(args) {
+        for (param, arg) in params.iter().zip(args) {
             let param = match &param.token_type {
                 TokenType::Identifier(iden) => iden,
                 _ => {
@@ -233,20 +238,7 @@ impl Interpreter {
             self.environment.define(param.as_str(), val)?;
         }
 
-        let statements = match callee.body.as_ref() {
-            Statement::Block(statements) => statements,
-            _ => {
-                return Err(InterpreterError::InvalidFunctionBody(
-                    callee.name.to_string(),
-                ));
-            }
-        };
-
-        for statement in statements {
-            if let Return::Return(val) = self.execute(&statement)? {
-                return Ok(val);
-            }
-        }
+        callee.call(self)?;
 
         self.environment.pop_scope();
 
@@ -376,6 +368,10 @@ impl Interpreter {
     fn grouping(&mut self, expression: &Expression) -> Result<Types, InterpreterError> {
         self.evaluate(expression)
     }
+
+    fn get_variable(&self, name: &str) -> Result<Types, InterpreterError> {
+        Ok(self.environment.get(name)?)
+    }
 }
 
 impl From<EnvironmentError> for InterpreterError {
@@ -392,7 +388,7 @@ impl From<EnvironmentError> for InterpreterError {
 #[cfg(test)]
 mod tests {
     use crate::{
-        environment::Types,
+        interpreter::types::Types,
         parser::{Expression, Literal},
         token::{Token, TokenType},
     };

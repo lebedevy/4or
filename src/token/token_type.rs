@@ -40,9 +40,6 @@ pub(crate) enum TokenType {
     If,
     Nil,
     Or,
-    // TODO: Move this to a library and out of the core language
-    #[deprecated()]
-    Print,
     Return,
     Super,
     This,
@@ -87,7 +84,6 @@ impl Display for TokenType {
             TokenType::If => write!(f, "if")?,
             TokenType::Nil => write!(f, "nil")?,
             TokenType::Or => write!(f, "or")?,
-            TokenType::Print => write!(f, "print")?,
             TokenType::Return => write!(f, "return")?,
             TokenType::Super => write!(f, "super")?,
             TokenType::This => write!(f, "this")?,
