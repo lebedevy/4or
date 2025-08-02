@@ -1,8 +1,4 @@
-use std::{
-    fmt::Display,
-    iter::{Enumerate, Peekable},
-    vec::IntoIter,
-};
+use std::{fmt::Display, iter::Peekable, vec::IntoIter};
 
 pub(crate) use expression::{Expression, Literal};
 pub(crate) use statement::Statement;
@@ -12,7 +8,7 @@ use crate::token::{Token, TokenType};
 mod expression;
 mod statement;
 
-type Peek = Peekable<Enumerate<IntoIter<Token>>>;
+type Peek = Peekable<IntoIter<Token>>;
 
 pub(super) struct Parser {}
 
@@ -78,7 +74,7 @@ impl Parser {
     }
 
     fn parse_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
-        let Some((_, token)) = tokens.peek() else {
+        let Some(token) = tokens.peek() else {
             return Err(ParserError::UnexpectedTermination);
         };
 
@@ -129,7 +125,7 @@ impl Parser {
 
                 if args.len() >= 255 {
                     return Err(ParserError::TooManyParameters(match tokens.peek() {
-                        Some((_, t)) => Some(t.clone()),
+                        Some(t) => Some(t.clone()),
                         None => None,
                     }));
                 }
@@ -155,7 +151,7 @@ impl Parser {
         let mut initializer = None;
         if Parser::match_next(tokens, &vec![TokenType::Semicolon]).is_none() {
             initializer = match tokens.peek() {
-                Some((_, token)) if token.token_type == TokenType::Let => {
+                Some(token) if token.token_type == TokenType::Let => {
                     Some(Parser::declaration(tokens)?)
                 }
                 _ => Some(Parser::expression_statement(tokens)?),
@@ -227,8 +223,7 @@ impl Parser {
 
         Parser::expect_match(tokens, TokenType::LeftBrace)?;
 
-        while matches!(tokens.peek(), Some((_, token)) if token.token_type != TokenType::RightBrace)
-        {
+        while matches!(tokens.peek(), Some(token) if token.token_type != TokenType::RightBrace) {
             statements.push(Parser::parse_statement(tokens)?);
         }
 
@@ -239,7 +234,7 @@ impl Parser {
 
     fn declaration(tokens: &mut Peek) -> Result<Statement, ParserError> {
         Parser::expect_match(tokens, TokenType::Let)?;
-        let Some((_, identifier)) = tokens.next() else {
+        let Some(identifier) = tokens.next() else {
             return Err(ParserError::ExpectedIdentifier(None));
         };
 
@@ -255,7 +250,7 @@ impl Parser {
 
         let initial = match Parser::match_next(tokens, &vec![TokenType::Equal]) {
             // we are doing assingment
-            Some((_, token)) if token.token_type == TokenType::Equal => {
+            Some(token) if token.token_type == TokenType::Equal => {
                 Some(Parser::expression(tokens)?)
             }
             _ => None,
@@ -279,7 +274,7 @@ impl Parser {
     fn assignment(tokens: &mut Peek) -> Result<Expression, ParserError> {
         let expr = Parser::logic_or(tokens)?;
 
-        if let Some((_, equals)) = Parser::match_next(tokens, &vec![TokenType::Equal]) {
+        if let Some(equals) = Parser::match_next(tokens, &vec![TokenType::Equal]) {
             let value = Parser::expression(tokens)?;
 
             // we can assign if the target is a variable expression; otherwise report error
@@ -298,7 +293,7 @@ impl Parser {
     fn logic_or(tokens: &mut Peek) -> Result<Expression, ParserError> {
         let mut left = Parser::logic_and(tokens)?;
 
-        while let Some((_, operator)) = Parser::match_next(tokens, &vec![TokenType::Or]) {
+        while let Some(operator) = Parser::match_next(tokens, &vec![TokenType::Or]) {
             let right = Parser::logic_and(tokens)?;
             left = Expression::Logical(Box::new(left), operator, Box::new(right))
         }
@@ -309,7 +304,7 @@ impl Parser {
     fn logic_and(tokens: &mut Peek) -> Result<Expression, ParserError> {
         let mut left = Parser::equality(tokens)?;
 
-        while let Some((_, operator)) = Parser::match_next(tokens, &vec![TokenType::And]) {
+        while let Some(operator) = Parser::match_next(tokens, &vec![TokenType::And]) {
             let right = Parser::equality(tokens)?;
             left = Expression::Logical(Box::new(left), operator, Box::new(right))
         }
@@ -355,7 +350,7 @@ impl Parser {
     }
 
     fn unary(tokens: &mut Peek) -> Result<Expression, ParserError> {
-        while let Some((_, operator)) =
+        while let Some(operator) =
             Parser::match_next(tokens, &vec![TokenType::Bang, TokenType::Minus])
         {
             let right = Parser::term(tokens)?;
@@ -384,7 +379,7 @@ impl Parser {
 
                 if args.len() >= 255 {
                     return Err(ParserError::TooManyParameters(match tokens.peek() {
-                        Some((_, t)) => Some(t.clone()),
+                        Some(t) => Some(t.clone()),
                         None => None,
                     }));
                 }
@@ -403,7 +398,7 @@ impl Parser {
     // TODO: Consider empty expressions
     fn primary(tokens: &mut Peek) -> Result<Expression, ParserError> {
         let res = match tokens.next() {
-            Some((_, token)) => match token.token_type {
+            Some(token) => match token.token_type {
                 TokenType::False => Expression::Literal(Literal::Bool(false)),
                 TokenType::True => Expression::Literal(Literal::Bool(true)),
                 TokenType::Nil => Expression::Literal(Literal::Nil),
@@ -430,7 +425,7 @@ impl Parser {
     ) -> Result<Expression, ParserError> {
         let mut left = expr(tokens)?;
 
-        while let Some((_, operator)) = Parser::match_next(tokens, &operators) {
+        while let Some(operator) = Parser::match_next(tokens, &operators) {
             let right = expr(tokens)?;
             left = Expression::Binary(Box::new(left), operator, Box::new(right))
         }
@@ -439,7 +434,7 @@ impl Parser {
     }
 
     fn synchronize(tokens: &mut Peek) {
-        while let Some((_, token)) = tokens.peek() {
+        while let Some(token) = tokens.peek() {
             match token.token_type {
                 TokenType::Semicolon => {
                     tokens.next();
@@ -462,20 +457,20 @@ impl Parser {
     fn expect_match(tokens: &mut Peek, expected: TokenType) -> Result<Token, ParserError> {
         match tokens.next() {
             Some(actual) => match actual {
-                (_, actual) if actual.token_type == expected => Ok(actual),
-                (_, actual) => Err(ParserError::UnexpectedToken(Some(actual), expected)),
+                actual if actual.token_type == expected => Ok(actual),
+                actual => Err(ParserError::UnexpectedToken(Some(actual), expected)),
             },
             None => Err(ParserError::UnexpectedToken(None, expected)),
         }
     }
 
-    fn match_next(tokens: &mut Peek, to_match: &Vec<TokenType>) -> Option<(usize, Token)> {
-        tokens.next_if(|(_, ch)| to_match.contains(&ch.token_type))
+    fn match_next(tokens: &mut Peek, to_match: &Vec<TokenType>) -> Option<Token> {
+        tokens.next_if(|ch| to_match.contains(&ch.token_type))
     }
 
     fn expect_identifier(tokens: &mut Peek) -> Result<Token, ParserError> {
         let token = match tokens.next() {
-            Some((_, token)) => Some(token),
+            Some(token) => Some(token),
             None => None,
         };
 
@@ -507,7 +502,6 @@ mod tests {
             index: 0,
         }]
         .into_iter()
-        .enumerate()
         .peekable()
     }
 
@@ -518,7 +512,6 @@ mod tests {
             .map(|(index, token_type)| Token { token_type, index })
             .collect::<Vec<Token>>()
             .into_iter()
-            .enumerate()
             .peekable()
     }
 
@@ -526,7 +519,7 @@ mod tests {
         let mut scanner = Scanner::new(string.to_string());
         let tokens = scanner.scan_tokens();
 
-        tokens.into_iter().enumerate().peekable()
+        tokens.into_iter().peekable()
     }
 
     // Single rules
@@ -929,7 +922,7 @@ mod tests {
 
     #[test]
     fn for_loop_full() -> Result<(), ParserError> {
-        let mut tokens = get_iter_from_string("for(let i = 0; i < 10; i = i + 1) { print i; }");
+        let mut tokens = get_iter_from_string("for(let i = 0; i < 10; i = i + 1) { print(i); }");
 
         let statement = Parser::for_statement(&mut tokens)?;
 

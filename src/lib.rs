@@ -19,7 +19,7 @@ pub fn run(interpreter: &mut Interpreter, content: String) -> Result<(), Program
     let mut scanner = Scanner::new(content);
 
     let tokens = scanner.scan_tokens();
-    let statements = Parser::parse(tokens.into_iter().enumerate().peekable())?;
+    let statements = Parser::parse(tokens.into_iter().peekable())?;
 
     interpreter.run(statements)?;
 
