@@ -84,7 +84,7 @@ impl Interpreter {
                     Return::None
                 };
 
-                if let Return::Return(r_val) = self.execute(statement)? {
+                if let Return::Return(r_val) = r_val {
                     return Ok(Return::Return(r_val));
                 }
             }
