@@ -13,8 +13,96 @@ use crate::{
 pub(super) mod function;
 pub(crate) mod types;
 
+struct EnvironmentWrapper {
+    environment: Option<Environment>,
+}
+
+impl EnvironmentWrapper {
+    fn new() -> Self {
+        Self {
+            environment: Some(Environment::new()),
+        }
+    }
+
+    /// Create a new scope that has closure over the current scope
+    /// The new scope will be set as the current scope
+    fn create_scope(&mut self) -> Result<(), InterpreterError> {
+        // Move the current scope out of the current reference
+        let current = match self.environment.take() {
+            Some(scope) => scope,
+            None => {
+                return Err(InterpreterError::EnviornmentError(
+                    "Missing current scope".to_owned(),
+                ));
+            }
+        };
+
+        self.environment = Some(Environment::create_scope(current));
+
+        Ok(())
+    }
+
+    fn pop_scope(&mut self) -> Result<(), InterpreterError> {
+        // Move the current scope out of the current reference
+        let current = match self.environment.take() {
+            Some(scope) => scope,
+            None => {
+                return Err(InterpreterError::EnviornmentError(
+                    "Missing current scope".to_owned(),
+                ));
+            }
+        };
+
+        let closure = match current.close() {
+            Some(closure) => closure,
+            None => {
+                return Err(InterpreterError::EnviornmentError(
+                    "Missing closure inside of environment".to_owned(),
+                ));
+            }
+        };
+
+        self.environment = Some(*closure);
+
+        Ok(())
+    }
+
+    fn define(&mut self, name: &str, value: Types) -> Result<(), InterpreterError> {
+        match &mut self.environment {
+            Some(scope) => Ok(scope.define(name, value)?),
+            None => {
+                return Err(InterpreterError::EnviornmentError(
+                    "Missing current scope".to_owned(),
+                ));
+            }
+        }
+    }
+
+    fn assign(&mut self, name: &str, value: Types) -> Result<(), InterpreterError> {
+        match &mut self.environment {
+            Some(scope) => Ok(scope.assign(name, value)?),
+            None => {
+                return Err(InterpreterError::EnviornmentError(
+                    "Missing current scope".to_owned(),
+                ));
+            }
+        }
+    }
+
+    fn get(&self, name: &str) -> Result<Types, InterpreterError> {
+        match &self.environment {
+            Some(scope) => Ok(scope.get(name)?),
+            None => {
+                return Err(InterpreterError::EnviornmentError(
+                    "Missing current scope".to_owned(),
+                ));
+            }
+        }
+    }
+}
+
 pub struct Interpreter {
-    environment: Environment,
+    environment: EnvironmentWrapper,
 }
 
 enum Return {
@@ -26,7 +114,7 @@ enum Return {
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            environment: Environment::new(),
+            environment: EnvironmentWrapper::new(),
         }
     }
 
@@ -57,16 +145,16 @@ impl Interpreter {
                 self.environment.define(identifier, value)?;
             }
             Statement::Block(statements) => {
-                self.environment.create_scope();
+                self.environment.create_scope()?;
 
                 for statement in statements {
                     if let Return::Return(r_val) = self.execute(statement)? {
-                        self.environment.pop_scope();
+                        self.environment.pop_scope()?;
                         return Ok(Return::Return(r_val));
                     }
                 }
 
-                self.environment.pop_scope();
+                self.environment.pop_scope()?;
             }
             Statement::If(expression, statement, else_statement) => {
                 let val = match self.evaluate(&expression)? {
@@ -139,11 +227,11 @@ pub(super) enum InterpreterError {
     InvalidLogicalOperator(Token),
     InvalidVariableIdentifier(Token),
     UndefinedVariable(String),
-    UndefinedScope,
     ExpectedBool(Types),
     NotAFunction(Types),
     InvalidFunctionBody(String),
     InvalidFunctionCall(String),
+    EnviornmentError(String),
 }
 
 impl Display for InterpreterError {
@@ -165,7 +253,6 @@ impl Display for InterpreterError {
             InterpreterError::UndefinedVariable(name) => {
                 write!(f, "Interpreter error: Undefined variable - {}", name)?;
             }
-            InterpreterError::UndefinedScope => write!(f, "Undefined scope")?,
             InterpreterError::ExpectedBool(literal) => {
                 write!(f, "Interpreter error: Expected bool, got '{}'", literal)?
             }
@@ -181,6 +268,7 @@ impl Display for InterpreterError {
                 write!(f, "Invalid function body for function '{}'", name)?
             }
             InterpreterError::InvalidFunctionCall(err) => write!(f, "{}", err)?,
+            InterpreterError::EnviornmentError(err) => write!(f, "{}", err)?,
         };
 
         Ok(())
@@ -215,7 +303,7 @@ impl Interpreter {
         };
 
         // Execute body with its own scope
-        self.environment.create_scope();
+        self.environment.create_scope()?;
 
         let params = callee.get_params();
 
@@ -240,7 +328,7 @@ impl Interpreter {
 
         callee.call(self)?;
 
-        self.environment.pop_scope();
+        self.environment.pop_scope()?;
 
         Ok(Types::Primitive(Literal::Nil))
     }
@@ -274,7 +362,7 @@ impl Interpreter {
         Ok(self.evaluate(right)?)
     }
 
-    fn variable(&self, token: &Token) -> Result<Types, InterpreterError> {
+    fn variable(&mut self, token: &Token) -> Result<Types, InterpreterError> {
         match &token.token_type {
             TokenType::Identifier(iden) => Ok(self.environment.get(iden)?),
             _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
@@ -369,7 +457,7 @@ impl Interpreter {
         self.evaluate(expression)
     }
 
-    fn get_variable(&self, name: &str) -> Result<Types, InterpreterError> {
+    fn get_variable(&mut self, name: &str) -> Result<Types, InterpreterError> {
         Ok(self.environment.get(name)?)
     }
 }
@@ -380,7 +468,6 @@ impl From<EnvironmentError> for InterpreterError {
             EnvironmentError::UndefinedVariable(value) => {
                 InterpreterError::UndefinedVariable(value)
             }
-            EnvironmentError::UndefinedScope => InterpreterError::UndefinedScope,
         }
     }
 }

@@ -6,7 +6,8 @@ use crate::interpreter::{
 };
 
 pub(super) struct Environment {
-    scopes: Vec<HashMap<String, Types>>,
+    scope: HashMap<String, Types>,
+    closure: Option<Box<Environment>>,
 }
 
 impl Environment {
@@ -14,61 +15,57 @@ impl Environment {
         let print_fn = PrintFn::new();
 
         Self {
-            scopes: vec![
-                vec![(
-                    print_fn.get_name().to_string(),
-                    Types::Reference(ReferenceTypes::Function(Arc::new(print_fn))),
-                )]
-                .into_iter()
-                .collect(),
-            ],
+            scope: vec![(
+                print_fn.get_name().to_string(),
+                Types::Reference(ReferenceTypes::Function(Arc::new(print_fn))),
+            )]
+            .into_iter()
+            .collect(),
+
+            closure: None,
         }
     }
 
-    pub(super) fn create_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+    pub(super) fn create_scope(closure: Environment) -> Self {
+        Self {
+            scope: HashMap::new(),
+            closure: Some(Box::new(closure)),
+        }
     }
 
-    // It is currently possible to remove all scopes
-    pub(super) fn pop_scope(&mut self) {
-        self.scopes.pop();
+    pub(super) fn close(self) -> Option<Box<Environment>> {
+        self.closure
     }
 
     pub(super) fn define(&mut self, name: &str, value: Types) -> Result<(), EnvironmentError> {
-        match self.scopes.last_mut() {
-            Some(scope) => {
-                scope.insert(name.to_string(), value);
-            }
-            None => return Err(EnvironmentError::UndefinedScope),
-        };
+        self.scope.insert(name.to_string(), value);
 
         Ok(())
     }
 
     pub(super) fn assign(&mut self, name: &str, value: Types) -> Result<(), EnvironmentError> {
-        for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(name) {
-                scope.insert(name.to_string(), value);
-                return Ok(());
-            };
-        }
+        if self.scope.contains_key(name) {
+            self.scope.insert(name.to_string(), value);
+            return Ok(());
+        };
 
-        Err(EnvironmentError::UndefinedVariable(name.to_string()))
+        match &mut self.closure {
+            Some(closure) => closure.assign(name, value),
+            None => Err(EnvironmentError::UndefinedVariable(name.to_string())),
+        }
     }
 
     pub(super) fn get(&self, name: &str) -> Result<Types, EnvironmentError> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.get(name) {
-                // TODO: Think more about cloning
-                return Ok(value.clone());
-            }
+        match self.scope.get(name) {
+            Some(val) => Ok(val.clone()),
+            None => match &self.closure {
+                Some(closure) => closure.get(name),
+                None => Err(EnvironmentError::UndefinedVariable(name.to_string())),
+            },
         }
-
-        Err(EnvironmentError::UndefinedVariable(name.to_string()))
     }
 }
 
 pub(crate) enum EnvironmentError {
     UndefinedVariable(String),
-    UndefinedScope,
 }
