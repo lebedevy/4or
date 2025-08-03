@@ -1,40 +1,29 @@
-use std::{collections::HashMap, sync::Arc};
-
-use crate::interpreter::{
-    function::{Fun, native::PrintFn},
-    types::{ReferenceTypes, Types},
+use std::{
+    collections::HashMap,
+    sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
+use crate::interpreter::types::Types;
+
+#[derive(Debug)]
 pub(super) struct Environment {
     scope: HashMap<String, Types>,
-    closure: Option<Box<Environment>>,
+    closure: Option<Arc<RwLock<Environment>>>,
 }
 
 impl Environment {
     pub(super) fn new() -> Self {
-        let print_fn = PrintFn::new();
-
         Self {
-            scope: vec![(
-                print_fn.get_name().to_string(),
-                Types::Reference(ReferenceTypes::Function(Arc::new(print_fn))),
-            )]
-            .into_iter()
-            .collect(),
-
+            scope: HashMap::new(),
             closure: None,
         }
     }
 
-    pub(super) fn create_scope(closure: Environment) -> Self {
+    pub(super) fn create_with_closure(closure: Arc<RwLock<Environment>>) -> Self {
         Self {
             scope: HashMap::new(),
-            closure: Some(Box::new(closure)),
+            closure: Some(closure),
         }
-    }
-
-    pub(super) fn close(self) -> Option<Box<Environment>> {
-        self.closure
     }
 
     pub(super) fn define(&mut self, name: &str, value: Types) -> Result<(), EnvironmentError> {
@@ -50,22 +39,37 @@ impl Environment {
         };
 
         match &mut self.closure {
-            Some(closure) => closure.assign(name, value),
+            Some(closure) => Ok(closure.write()?.assign(name, value)?),
             None => Err(EnvironmentError::UndefinedVariable(name.to_string())),
         }
     }
 
     pub(super) fn get(&self, name: &str) -> Result<Types, EnvironmentError> {
-        match self.scope.get(name) {
-            Some(val) => Ok(val.clone()),
-            None => match &self.closure {
-                Some(closure) => closure.get(name),
-                None => Err(EnvironmentError::UndefinedVariable(name.to_string())),
-            },
+        if let Some(val) = self.scope.get(name) {
+            return Ok(val.clone());
+        }
+
+        match &self.closure {
+            Some(closure) => closure.read()?.get(name),
+            None => Err(EnvironmentError::UndefinedVariable(name.to_string())),
         }
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum EnvironmentError {
     UndefinedVariable(String),
+    ReferencePoison(String),
+}
+
+impl From<PoisonError<RwLockReadGuard<'_, Environment>>> for EnvironmentError {
+    fn from(value: PoisonError<RwLockReadGuard<'_, Environment>>) -> Self {
+        EnvironmentError::ReferencePoison(value.to_string())
+    }
+}
+
+impl From<PoisonError<RwLockWriteGuard<'_, Environment>>> for EnvironmentError {
+    fn from(value: PoisonError<RwLockWriteGuard<'_, Environment>>) -> Self {
+        EnvironmentError::ReferencePoison(value.to_string())
+    }
 }

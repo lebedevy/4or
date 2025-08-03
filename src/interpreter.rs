@@ -1,9 +1,12 @@
-use std::{fmt::Display, sync::Arc};
+use std::{
+    fmt::Display,
+    sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
 use crate::{
     environment::{Environment, EnvironmentError},
     interpreter::{
-        function::UserFn,
+        function::{Fun, UserFn, native::PrintFn},
         types::{ReferenceTypes, Types},
     },
     parser::{Expression, Literal, Statement},
@@ -14,64 +17,27 @@ pub(super) mod function;
 pub(crate) mod types;
 
 struct EnvironmentWrapper {
-    environment: Option<Environment>,
+    environment: Option<Arc<RwLock<Environment>>>,
 }
 
 impl EnvironmentWrapper {
     fn new() -> Self {
+        let env = Arc::new(RwLock::new(Environment::new()));
+
         Self {
-            environment: Some(Environment::new()),
+            environment: Some(env),
         }
     }
 
-    /// Create a new scope that has closure over the current scope
-    /// The new scope will be set as the current scope
-    fn create_scope(&mut self) -> Result<(), InterpreterError> {
-        // Move the current scope out of the current reference
-        let current = match self.environment.take() {
-            Some(scope) => scope,
-            None => {
-                return Err(InterpreterError::EnviornmentError(
-                    "Missing current scope".to_owned(),
-                ));
-            }
-        };
-
-        self.environment = Some(Environment::create_scope(current));
-
-        Ok(())
+    fn set_scope(&mut self, scope: Arc<RwLock<Environment>>) {
+        self.environment = Some(scope);
     }
 
-    fn pop_scope(&mut self) -> Result<(), InterpreterError> {
-        // Move the current scope out of the current reference
-        let current = match self.environment.take() {
-            Some(scope) => scope,
-            None => {
-                return Err(InterpreterError::EnviornmentError(
-                    "Missing current scope".to_owned(),
-                ));
-            }
-        };
-
-        let closure = match current.close() {
-            Some(closure) => closure,
-            None => {
-                return Err(InterpreterError::EnviornmentError(
-                    "Missing closure inside of environment".to_owned(),
-                ));
-            }
-        };
-
-        self.environment = Some(*closure);
-
-        Ok(())
-    }
-
-    fn define(&mut self, name: &str, value: Types) -> Result<(), InterpreterError> {
+    pub fn define(&mut self, name: &str, value: Types) -> Result<(), InterpreterError> {
         match &mut self.environment {
-            Some(scope) => Ok(scope.define(name, value)?),
+            Some(scope) => Ok(scope.write()?.define(name, value)?),
             None => {
-                return Err(InterpreterError::EnviornmentError(
+                return Err(InterpreterError::EnvironmentError(
                     "Missing current scope".to_owned(),
                 ));
             }
@@ -80,9 +46,9 @@ impl EnvironmentWrapper {
 
     fn assign(&mut self, name: &str, value: Types) -> Result<(), InterpreterError> {
         match &mut self.environment {
-            Some(scope) => Ok(scope.assign(name, value)?),
+            Some(scope) => Ok(scope.write()?.assign(name, value)?),
             None => {
-                return Err(InterpreterError::EnviornmentError(
+                return Err(InterpreterError::EnvironmentError(
                     "Missing current scope".to_owned(),
                 ));
             }
@@ -91,9 +57,20 @@ impl EnvironmentWrapper {
 
     fn get(&self, name: &str) -> Result<Types, InterpreterError> {
         match &self.environment {
-            Some(scope) => Ok(scope.get(name)?),
+            Some(scope) => Ok(scope.read()?.get(name)?),
             None => {
-                return Err(InterpreterError::EnviornmentError(
+                return Err(InterpreterError::EnvironmentError(
+                    "Missing current scope".to_owned(),
+                ));
+            }
+        }
+    }
+
+    fn get_closure_ref(&self) -> Result<Arc<RwLock<Environment>>, InterpreterError> {
+        match &self.environment {
+            Some(closure) => Ok(closure.clone()),
+            None => {
+                return Err(InterpreterError::EnvironmentError(
                     "Missing current scope".to_owned(),
                 ));
             }
@@ -113,9 +90,18 @@ enum Return {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self {
-            environment: EnvironmentWrapper::new(),
-        }
+        let mut environment = EnvironmentWrapper::new();
+
+        let print_fn = PrintFn::new(environment.get_closure_ref().unwrap());
+
+        environment
+            .define(
+                &print_fn.get_name().to_string(),
+                Types::Reference(ReferenceTypes::Function(Arc::new(print_fn))),
+            )
+            .unwrap();
+
+        Self { environment }
     }
 
     pub(super) fn run(&mut self, statements: Vec<Statement>) -> Result<(), InterpreterError> {
@@ -145,16 +131,19 @@ impl Interpreter {
                 self.environment.define(identifier, value)?;
             }
             Statement::Block(statements) => {
-                self.environment.create_scope()?;
+                let closure = self.environment.get_closure_ref()?;
+                self.environment.set_scope(Arc::new(RwLock::new(
+                    Environment::create_with_closure(closure.clone()),
+                )));
 
                 for statement in statements {
                     if let Return::Return(r_val) = self.execute(statement)? {
-                        self.environment.pop_scope()?;
+                        self.environment.set_scope(closure);
                         return Ok(Return::Return(r_val));
                     }
                 }
 
-                self.environment.pop_scope()?;
+                self.environment.set_scope(closure);
             }
             Statement::If(expression, statement, else_statement) => {
                 let val = match self.evaluate(&expression)? {
@@ -205,6 +194,7 @@ impl Interpreter {
                         name.as_str(),
                         params,
                         body.clone(),
+                        self.environment.get_closure_ref()?,
                     )))),
                 )?;
             }
@@ -231,7 +221,19 @@ pub(super) enum InterpreterError {
     NotAFunction(Types),
     InvalidFunctionBody(String),
     InvalidFunctionCall(String),
-    EnviornmentError(String),
+    EnvironmentError(String),
+}
+
+impl From<PoisonError<RwLockReadGuard<'_, Environment>>> for InterpreterError {
+    fn from(value: PoisonError<RwLockReadGuard<'_, Environment>>) -> Self {
+        InterpreterError::EnvironmentError(value.to_string())
+    }
+}
+
+impl From<PoisonError<RwLockWriteGuard<'_, Environment>>> for InterpreterError {
+    fn from(value: PoisonError<RwLockWriteGuard<'_, Environment>>) -> Self {
+        InterpreterError::EnvironmentError(value.to_string())
+    }
 }
 
 impl Display for InterpreterError {
@@ -268,7 +270,7 @@ impl Display for InterpreterError {
                 write!(f, "Invalid function body for function '{}'", name)?
             }
             InterpreterError::InvalidFunctionCall(err) => write!(f, "{}", err)?,
-            InterpreterError::EnviornmentError(err) => write!(f, "{}", err)?,
+            InterpreterError::EnvironmentError(err) => write!(f, "{}", err)?,
         };
 
         Ok(())
@@ -302,9 +304,6 @@ impl Interpreter {
             _ => return Err(InterpreterError::NotAFunction(callee)),
         };
 
-        // Execute body with its own scope
-        self.environment.create_scope()?;
-
         let params = callee.get_params();
 
         if params.len() != args.len() {
@@ -312,6 +311,10 @@ impl Interpreter {
                 "Invalid arg count".to_string(),
             ));
         }
+
+        let fn_scope = Arc::new(RwLock::new(Environment::create_with_closure(
+            callee.get_closure(),
+        )));
 
         for (param, arg) in params.iter().zip(args) {
             let param = match &param.token_type {
@@ -323,12 +326,16 @@ impl Interpreter {
                 }
             };
             let val = self.evaluate(arg)?;
-            self.environment.define(param.as_str(), val)?;
+            fn_scope.write()?.define(param.as_str(), val)?;
         }
+
+        let prev_scope = self.environment.get_closure_ref()?;
+
+        self.environment.set_scope(fn_scope);
 
         callee.call(self)?;
 
-        self.environment.pop_scope()?;
+        self.environment.set_scope(prev_scope);
 
         Ok(Types::Primitive(Literal::Nil))
     }
@@ -468,23 +475,34 @@ impl From<EnvironmentError> for InterpreterError {
             EnvironmentError::UndefinedVariable(value) => {
                 InterpreterError::UndefinedVariable(value)
             }
+            EnvironmentError::ReferencePoison(err) => InterpreterError::EnvironmentError(err),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        iter::Peekable,
+        result::{self, IntoIter},
+        sync::{Arc, RwLock},
+    };
+
+    use leptos::prelude::RwSignal;
+
     use crate::{
-        interpreter::types::Types,
-        parser::{Expression, Literal},
+        Parser, ParserError, ProgramError,
+        environment::Environment,
+        interpreter::{
+            function::Fun,
+            types::{ReferenceTypes, Types},
+        },
+        parser::{Expression, Literal, Statement},
+        scanner::Scanner,
         token::{Token, TokenType},
     };
 
     use super::{Interpreter, InterpreterError};
-
-    fn get_interpreter() -> Interpreter {
-        Interpreter::new()
-    }
 
     fn get_num_exp(num: f64) -> Expression {
         Expression::Literal(Literal::Number(num))
@@ -495,6 +513,12 @@ mod tests {
             token_type,
             index: 0,
         }
+    }
+
+    fn get_program_from_string(string: &str) -> Result<Vec<Statement>, ParserError> {
+        let mut scanner = Scanner::new(string.to_string());
+        let tokens = scanner.scan_tokens();
+        Ok(Parser::parse(tokens.into_iter().peekable())?)
     }
 
     #[test]
@@ -511,7 +535,7 @@ mod tests {
         ];
 
         for (left, token, right, expected) in operations {
-            let result = get_interpreter().binary(
+            let result = Interpreter::new().binary(
                 &get_num_exp(left),
                 &get_token(token),
                 &get_num_exp(right),
@@ -531,6 +555,149 @@ mod tests {
                 expected
             );
         }
+
+        Ok(())
+    }
+
+    // Closure tests
+    // TODO: there are arguably integration tests, but they would require me to publically expose way more
+    // than I would like to; so leave them here for now
+
+    #[test]
+    fn fn_call_resets_closure() -> Result<(), ProgramError> {
+        let program = get_program_from_string("let a = 1; fn test() { print(a); } test();")?;
+
+        let mut interpreter = Interpreter::new();
+
+        let env = interpreter.environment.get_closure_ref()?;
+
+        interpreter.run(program)?;
+
+        let env_after = interpreter.environment.get_closure_ref()?;
+
+        assert!(
+            std::ptr::eq(&*env.read().unwrap(), &*env_after.read().unwrap()),
+            "Scope not reset after function call"
+        );
+
+        Ok(())
+    }
+
+    struct StoreFn {
+        params: Vec<Token>,
+        results: RwLock<Vec<f64>>,
+        closure: Arc<RwLock<Environment>>,
+    }
+
+    impl StoreFn {
+        fn new(closure: Arc<RwLock<Environment>>) -> Self {
+            Self {
+                params: vec![Token::new(TokenType::Identifier("val".to_owned()), 0)],
+                results: RwLock::new(vec![]),
+                closure,
+            }
+        }
+    }
+
+    impl Fun for StoreFn {
+        fn call(&self, interpreter: &mut Interpreter) -> Result<Types, InterpreterError> {
+            let iden = match &self.params.first().unwrap().token_type {
+                TokenType::Identifier(iden) => iden,
+                _ => {
+                    return Err(InterpreterError::InvalidFunctionBody(
+                        "something something".to_owned(),
+                    ));
+                }
+            };
+
+            let mut arr = self.results.write().unwrap();
+
+            arr.push(match interpreter.get_variable(&iden)? {
+                Types::Primitive(Literal::Number(num)) => num,
+                _ => {
+                    return Err(InterpreterError::InvalidFunctionCall(
+                        "Not a number".to_owned(),
+                    ));
+                }
+            });
+
+            Ok(Types::Primitive(Literal::Nil))
+        }
+
+        fn get_name(&self) -> &str {
+            "store"
+        }
+
+        fn get_params(&self) -> &Vec<Token> {
+            &self.params
+        }
+
+        fn get_closure(&self) -> std::sync::Arc<std::sync::RwLock<Environment>> {
+            self.closure.clone()
+        }
+    }
+
+    #[test]
+    fn binds_to_fn_closure() -> Result<(), ProgramError> {
+        // TODO: This is probably an integration test
+        let program = get_program_from_string(
+            "
+let a = 1;
+fn test() { store(a); }
+{ let a = 2; test(); store(a); }
+        ",
+        )?;
+
+        let mut interpreter = Interpreter::new();
+        let store_fn = Arc::new(StoreFn::new(interpreter.environment.get_closure_ref()?));
+        interpreter.environment.define(
+            store_fn.get_name(),
+            Types::Reference(ReferenceTypes::Function(store_fn.clone())),
+        )?;
+
+        interpreter.run(program)?;
+
+        let actual = store_fn.results.read().unwrap();
+        let expected = vec![1_f64, 2_f64];
+
+        assert!(
+            itertools::equal(expected.iter(), actual.iter()),
+            "Expected '{:?}' got '{:?}'",
+            expected,
+            actual
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn call_binds_args_to_call_site() -> Result<(), ProgramError> {
+        let program = get_program_from_string(
+            "
+let a = 1;
+fn test() { store(a); }
+{ let a = 2; store(a); test(); }
+        ",
+        )?;
+
+        let mut interpreter = Interpreter::new();
+        let store_fn = Arc::new(StoreFn::new(interpreter.environment.get_closure_ref()?));
+        interpreter.environment.define(
+            store_fn.get_name(),
+            Types::Reference(ReferenceTypes::Function(store_fn.clone())),
+        )?;
+
+        interpreter.run(program)?;
+
+        let actual = store_fn.results.read().unwrap();
+        let expected = vec![2_f64, 1_f64];
+
+        assert!(
+            itertools::equal(expected.iter(), actual.iter()),
+            "Expected '{:?}' got '{:?}'",
+            expected,
+            actual
+        );
 
         Ok(())
     }

@@ -10,6 +10,12 @@ pub(crate) struct Token {
     pub(crate) index: usize,
 }
 
+impl Token {
+    pub(crate) fn new(token_type: TokenType, index: usize) -> Self {
+        Self { token_type, index }
+    }
+}
+
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "column - {}; token - {};", self.index, self.token_type)?;

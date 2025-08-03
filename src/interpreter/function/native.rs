@@ -1,20 +1,25 @@
+use std::sync::{Arc, RwLock};
+
 use crate::{
     InterpreterError,
+    environment::Environment,
     interpreter::{function::Fun, types::Types},
     token::{Token, TokenType},
 };
 
 pub(crate) struct PrintFn {
     params: Vec<Token>,
+    closure: Arc<RwLock<Environment>>,
 }
 
 impl PrintFn {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(closure: Arc<RwLock<Environment>>) -> Self {
         Self {
             params: vec![Token {
                 token_type: TokenType::Identifier("value".to_owned()),
                 index: 0,
             }],
+            closure,
         }
     }
 }
@@ -49,5 +54,9 @@ impl Fun for PrintFn {
 
     fn get_params(&self) -> &Vec<Token> {
         &self.params
+    }
+
+    fn get_closure(&self) -> std::sync::Arc<std::sync::RwLock<crate::environment::Environment>> {
+        self.closure.clone()
     }
 }
