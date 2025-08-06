@@ -4,7 +4,7 @@ use crate::{
     InterpreterError,
     environment::Environment,
     interpreter::{Interpreter, Return, types::Types},
-    parser::{Literal, Statement},
+    parser::{Literal, statement::Block},
     token::Token,
 };
 
@@ -21,7 +21,7 @@ pub(crate) trait Fun {
 pub(super) struct UserFn {
     pub(super) name: String,
     pub(super) params: Vec<Token>,
-    pub(super) body: Box<Statement>,
+    pub(super) body: Block,
     pub(super) closure: Arc<RwLock<Environment>>,
 }
 
@@ -29,7 +29,7 @@ impl UserFn {
     pub(super) fn new(
         name: &str,
         params: Vec<Token>,
-        body: Box<Statement>,
+        body: Block,
         closure: Arc<RwLock<Environment>>,
     ) -> Self {
         Self {
@@ -43,14 +43,7 @@ impl UserFn {
 
 impl Fun for UserFn {
     fn call(&self, interpreter: &mut Interpreter) -> Result<Types, InterpreterError> {
-        let statements = match self.body.as_ref() {
-            Statement::Block(statements) => statements,
-            _ => {
-                return Err(InterpreterError::InvalidFunctionBody(self.name.to_string()));
-            }
-        };
-
-        for statement in statements {
+        for statement in &self.body.statements {
             if let Return::Return(val) = interpreter.execute(&statement)? {
                 return Ok(val);
             }

@@ -130,13 +130,13 @@ impl Interpreter {
 
                 self.environment.define(identifier, value)?;
             }
-            Statement::Block(statements) => {
+            Statement::Block(block) => {
                 let closure = self.environment.get_closure_ref()?;
                 self.environment.set_scope(Arc::new(RwLock::new(
                     Environment::create_with_closure(closure.clone()),
                 )));
 
-                for statement in statements {
+                for statement in &block.statements {
                     if let Return::Return(r_val) = self.execute(statement)? {
                         self.environment.set_scope(closure);
                         return Ok(Return::Return(r_val));
@@ -691,6 +691,45 @@ fn test() { store(a); }
 
         let actual = store_fn.results.read().unwrap();
         let expected = vec![2_f64, 1_f64];
+
+        assert!(
+            itertools::equal(expected.iter(), actual.iter()),
+            "Expected '{:?}' got '{:?}'",
+            expected,
+            actual
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn closure_resolves_to_same_binding() -> Result<(), ProgramError> {
+        let program = get_program_from_string(
+            "
+let a = 1;
+{
+  fn test() {
+    store(a);
+  }
+
+  test();
+  let a = 2;
+  test();
+}
+        ",
+        )?;
+
+        let mut interpreter = Interpreter::new();
+        let store_fn = Arc::new(StoreFn::new(interpreter.environment.get_closure_ref()?));
+        interpreter.environment.define(
+            store_fn.get_name(),
+            Types::Reference(ReferenceTypes::Function(store_fn.clone())),
+        )?;
+
+        interpreter.run(program)?;
+
+        let actual = store_fn.results.read().unwrap();
+        let expected = vec![1_f64, 1_f64];
 
         assert!(
             itertools::equal(expected.iter(), actual.iter()),

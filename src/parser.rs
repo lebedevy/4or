@@ -3,10 +3,13 @@ use std::{fmt::Display, iter::Peekable, vec::IntoIter};
 pub(crate) use expression::{Expression, Literal};
 pub(crate) use statement::Statement;
 
-use crate::token::{Token, TokenType};
+use crate::{
+    parser::statement::Block,
+    token::{Token, TokenType},
+};
 
 mod expression;
-mod statement;
+pub(crate) mod statement;
 
 type Peek = Peekable<IntoIter<Token>>;
 
@@ -78,16 +81,21 @@ impl Parser {
             return Err(ParserError::UnexpectedTermination);
         };
 
-        let res = match token.token_type {
-            TokenType::Fn => Parser::function(tokens),
-            TokenType::Let => Parser::declaration(tokens),
-            TokenType::LeftBrace => Parser::block(tokens),
-            TokenType::If => Parser::if_statement(tokens),
-            TokenType::While => Parser::while_statement(tokens),
-            TokenType::For => Parser::for_statement(tokens),
-            TokenType::Return => Parser::return_statement(tokens),
-            _ => Parser::expression_statement(tokens),
-        };
+        // required to drop the borrow on tokens
+        let token = token.clone();
+
+        let res = || -> Result<Statement, ParserError> {
+            Ok(match token.token_type {
+                TokenType::Fn => Parser::function(tokens)?,
+                TokenType::Let => Parser::declaration(tokens)?,
+                TokenType::LeftBrace => Statement::Block(Parser::block(tokens)?),
+                TokenType::If => Parser::if_statement(tokens)?,
+                TokenType::While => Parser::while_statement(tokens)?,
+                TokenType::For => Parser::for_statement(tokens)?,
+                TokenType::Return => Parser::return_statement(tokens)?,
+                _ => Parser::expression_statement(tokens)?,
+            })
+        }();
 
         match res {
             Ok(res) => Ok(res),
@@ -140,7 +148,7 @@ impl Parser {
 
         let body = Parser::block(tokens)?;
 
-        Ok(Statement::Function(name, args, Box::new(body)))
+        Ok(Statement::Function(name, args, body))
     }
 
     fn for_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -179,13 +187,17 @@ impl Parser {
                 _ => Expression::Literal(Literal::Bool(true)),
             },
             Box::new(match increment {
-                Some(increment) => Statement::Block(vec![body, Statement::Expression(increment)]),
+                Some(increment) => Statement::Block(Block {
+                    statements: vec![body, Statement::Expression(increment)],
+                }),
                 None => body,
             }),
         );
 
         Ok(match initializer {
-            Some(initializer) => Statement::Block(vec![initializer, while_statement]),
+            Some(initializer) => Statement::Block(Block {
+                statements: vec![initializer, while_statement],
+            }),
             None => while_statement,
         })
     }
@@ -218,7 +230,7 @@ impl Parser {
         ))
     }
 
-    fn block(tokens: &mut Peek) -> Result<Statement, ParserError> {
+    fn block(tokens: &mut Peek) -> Result<Block, ParserError> {
         let mut statements = vec![];
 
         Parser::expect_match(tokens, TokenType::LeftBrace)?;
@@ -229,7 +241,7 @@ impl Parser {
 
         Parser::expect_match(tokens, TokenType::RightBrace)?;
 
-        Ok(Statement::Block(statements))
+        Ok(Block { statements })
     }
 
     fn declaration(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -821,7 +833,7 @@ mod tests {
             matches!(expr, Expression::Literal(val) if matches!(val, Literal::Bool(val) if val))
         );
 
-        assert!(matches!(*statement, Statement::Block(val) if val.is_empty()));
+        assert!(matches!(*statement, Statement::Block(val) if val.statements.is_empty()));
 
         Ok(())
     }
@@ -833,7 +845,7 @@ mod tests {
         let statement = Parser::for_statement(&mut tokens)?;
 
         let statements = match statement {
-            Statement::Block(statements) => statements,
+            Statement::Block(block) => block.statements,
             _ => panic!("Expected statment to be of type Block"),
         };
 
@@ -876,7 +888,7 @@ mod tests {
         };
 
         let statements = match *statement {
-            Statement::Block(statements) => statements,
+            Statement::Block(block) => block.statements,
             _ => panic!("Expected a block statement"),
         };
 
@@ -904,7 +916,7 @@ mod tests {
         };
 
         let statements = match *statement {
-            Statement::Block(statements) => statements,
+            Statement::Block(block) => block.statements,
             _ => panic!("Expected a block statement"),
         };
 
@@ -927,7 +939,7 @@ mod tests {
         let statement = Parser::for_statement(&mut tokens)?;
 
         let mut statements = match statement {
-            Statement::Block(statements) => statements.into_iter(),
+            Statement::Block(block) => block.statements.into_iter(),
             _ => panic!("Expected statment to be of type Block"),
         };
 
@@ -944,7 +956,7 @@ mod tests {
         assert!(matches!(expr, Expression::Binary(..)));
 
         let mut statements = match *statement {
-            Statement::Block(statements) => statements.into_iter(),
+            Statement::Block(block) => block.statements.into_iter(),
             _ => panic!("Expected a block statement"),
         };
 
