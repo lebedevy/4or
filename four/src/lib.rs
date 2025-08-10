@@ -37,7 +37,7 @@ fn get_token_error_text(input: &str, token: &Token) -> String {
     let mut text = "".to_owned();
     let chars = input.chars();
     let index = token.index;
-    let start = if index < 10 { 0 } else { token.index - 10 };
+    let start = if index < 10 { 0 } else { index - 10 };
     let end = min(vec![input.len(), index + 10]).expect("Could not get min for end");
     let start_spacing = " ".repeat(index - start);
 
