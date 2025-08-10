@@ -1,7 +1,6 @@
 use crate::token::Token;
 
 use super::Expression::{self};
-use crate::token::TokenType::Identifier;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Block {
@@ -11,7 +10,7 @@ pub(crate) struct Block {
 #[derive(Debug, Clone)]
 pub(crate) enum Statement {
     Expression(Expression),
-    Variable(Identifier, Option<Expression>),
+    Variable(Token, Option<Expression>),
     Block(Block),
     Function(Token, Vec<Token>, Block),
     If(Expression, Box<Statement>, Option<Box<Statement>>),

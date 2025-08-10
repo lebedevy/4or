@@ -1,4 +1,4 @@
-use four_4or::{interpreter::Interpreter, run};
+use four::{interpreter::Interpreter, run};
 use leptos::{ev::KeyboardEvent, logging::log, prelude::*};
 
 const PREFIX: &str = ">  ";

@@ -9,11 +9,12 @@ use crate::{
     token::Token,
 };
 
-pub mod environment;
+pub(crate) mod environment;
 pub mod interpreter;
-pub mod parser;
-pub mod scanner;
-pub mod token;
+pub(crate) mod parser;
+pub(crate) mod resolver;
+pub(crate) mod scanner;
+pub(crate) mod token;
 
 pub fn run(interpreter: &mut Interpreter, content: String) -> Result<(), ProgramError> {
     let mut scanner = Scanner::new(content);
@@ -35,13 +36,10 @@ pub enum ProgramError {
 fn get_token_error_text(input: &str, token: &Token) -> String {
     let mut text = "".to_owned();
     let chars = input.chars();
-    let start = if token.index < 10 {
-        0
-    } else {
-        token.index - 10
-    };
-    let end = min(vec![input.len(), token.index + 10]).expect("Could not get min for end");
-    let start_spacing = " ".repeat(token.index - start);
+    let index = token.index;
+    let start = if index < 10 { 0 } else { token.index - 10 };
+    let end = min(vec![input.len(), index + 10]).expect("Could not get min for end");
+    let start_spacing = " ".repeat(index - start);
 
     // return 10 chars before and after
     text += format!("{}\n", chars.skip(start).take(end).collect::<String>()).as_str();

@@ -592,7 +592,7 @@ mod tests {
     impl StoreFn {
         fn new(closure: Arc<RwLock<Environment>>) -> Self {
             Self {
-                params: vec![Token::new(TokenType::Identifier("val".to_owned()), 0)],
+                params: vec![Identifier::new("val".to_owned(), 0)],
                 results: RwLock::new(vec![]),
                 closure,
             }
