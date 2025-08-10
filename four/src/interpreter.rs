@@ -9,7 +9,7 @@ use crate::{
         function::{Fun, UserFn, native::PrintFn},
         types::{ReferenceTypes, Types},
     },
-    parser::{Expression, Literal, Statement},
+    parser::{Expression, Literal, Statement, statement::Identifier},
     token::{Token, TokenType},
 };
 
@@ -117,18 +117,13 @@ impl Interpreter {
             Statement::Expression(expression) => {
                 return Ok(Return::Expression(self.evaluate(&expression)?));
             }
-            Statement::Variable(token, expression) => {
+            Statement::Variable(ident, expression) => {
                 let value = match expression {
                     Some(expression) => self.evaluate(&expression)?,
                     None => Types::Primitive(Literal::Nil),
                 };
 
-                let identifier = match &token.token_type {
-                    TokenType::Identifier(iden) => iden,
-                    _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
-                };
-
-                self.environment.define(identifier, value)?;
+                self.environment.define(&ident.ident, value)?;
             }
             Statement::Block(block) => {
                 let closure = self.environment.get_closure_ref()?;
@@ -180,18 +175,12 @@ impl Interpreter {
                 }
             },
             Statement::Function(name, params, body) => {
-                // fn declaration
-                let name = match &name.token_type {
-                    TokenType::Identifier(name) => name,
-                    _ => return Err(InterpreterError::InvalidVariableIdentifier(name.clone())),
-                };
-
                 let params = params.iter().map(|x| x.clone()).collect();
 
                 self.environment.define(
-                    name.as_str(),
+                    &name.ident,
                     Types::Reference(ReferenceTypes::Function(Arc::new(UserFn::new(
-                        name.as_str(),
+                        &name.ident,
                         params,
                         body.clone(),
                         self.environment.get_closure_ref()?,
@@ -215,11 +204,9 @@ pub(super) enum InterpreterError {
     InvalidUnary(Token),
     InvalidBinary(Token),
     InvalidLogicalOperator(Token),
-    InvalidVariableIdentifier(Token),
     UndefinedVariable(String),
     ExpectedBool(Types),
     NotAFunction(Types),
-    InvalidFunctionBody(String),
     InvalidFunctionCall(String),
     EnvironmentError(String),
 }
@@ -245,13 +232,6 @@ impl Display for InterpreterError {
             InterpreterError::InvalidBinary(token) => {
                 write!(f, "Interpreter error: Invalid binary - {}", token)?;
             }
-            InterpreterError::InvalidVariableIdentifier(token) => {
-                write!(
-                    f,
-                    "Interpreter error: Invalid variable identifier - {}",
-                    token
-                )?;
-            }
             InterpreterError::UndefinedVariable(name) => {
                 write!(f, "Interpreter error: Undefined variable - {}", name)?;
             }
@@ -265,9 +245,6 @@ impl Display for InterpreterError {
             )?,
             InterpreterError::NotAFunction(types) => {
                 write!(f, "Attempting to call a non-function object {}", types)?
-            }
-            InterpreterError::InvalidFunctionBody(name) => {
-                write!(f, "Invalid function body for function '{}'", name)?
             }
             InterpreterError::InvalidFunctionCall(err) => write!(f, "{}", err)?,
             InterpreterError::EnvironmentError(err) => write!(f, "{}", err)?,
@@ -286,7 +263,7 @@ impl Interpreter {
             Expression::Literal(literal) => Ok(Types::Primitive(literal.clone())),
             Expression::Unary(token, expression) => self.unary(token, expression),
             Expression::Variable(token) => self.variable(token),
-            Expression::Assignment(token, expression) => self.assign(token, expression),
+            Expression::Assignment(ident, expression) => self.assign(ident, expression),
             Expression::Logical(left, operator, right) => self.logical(left, operator, right),
             Expression::Call(expression, args) => self.call_function(expression, args),
         }
@@ -317,16 +294,8 @@ impl Interpreter {
         )));
 
         for (param, arg) in params.iter().zip(args) {
-            let param = match &param.token_type {
-                TokenType::Identifier(iden) => iden,
-                _ => {
-                    return Err(InterpreterError::InvalidFunctionCall(
-                        "invalid param defintion".to_string(),
-                    ));
-                }
-            };
             let val = self.evaluate(arg)?;
-            fn_scope.write()?.define(param.as_str(), val)?;
+            fn_scope.write()?.define(&param.ident, val)?;
         }
 
         let prev_scope = self.environment.get_closure_ref()?;
@@ -369,24 +338,18 @@ impl Interpreter {
         Ok(self.evaluate(right)?)
     }
 
-    fn variable(&mut self, token: &Token) -> Result<Types, InterpreterError> {
-        match &token.token_type {
-            TokenType::Identifier(iden) => Ok(self.environment.get(iden)?),
-            _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
-        }
+    fn variable(&mut self, ident: &Identifier) -> Result<Types, InterpreterError> {
+        Ok(self.environment.get(&ident.ident)?)
     }
 
     fn assign(
         &mut self,
-        token: &Token,
+        ident: &Identifier,
         expression: &Expression,
     ) -> Result<Types, InterpreterError> {
         let value = self.evaluate(expression)?;
 
-        match &token.token_type {
-            TokenType::Identifier(iden) => self.environment.assign(iden, value.clone())?,
-            _ => return Err(InterpreterError::InvalidVariableIdentifier(token.clone())),
-        };
+        self.environment.assign(&ident.ident, value.clone())?;
 
         Ok(value)
     }
@@ -482,11 +445,7 @@ impl From<EnvironmentError> for InterpreterError {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        iter::Peekable,
-        result::{self, IntoIter},
-        sync::{Arc, RwLock},
-    };
+    use std::sync::{Arc, RwLock};
 
     use crate::{
         Parser, ParserError, ProgramError,
@@ -495,7 +454,7 @@ mod tests {
             function::Fun,
             types::{ReferenceTypes, Types},
         },
-        parser::{Expression, Literal, Statement},
+        parser::{Expression, Literal, Statement, statement::Identifier},
         scanner::Scanner,
         token::{Token, TokenType},
     };
@@ -582,7 +541,7 @@ mod tests {
     }
 
     struct StoreFn {
-        params: Vec<Token>,
+        params: Vec<Identifier>,
         results: RwLock<Vec<f64>>,
         closure: Arc<RwLock<Environment>>,
     }
@@ -590,7 +549,10 @@ mod tests {
     impl StoreFn {
         fn new(closure: Arc<RwLock<Environment>>) -> Self {
             Self {
-                params: vec![Token::new(TokenType::Identifier("val".to_owned()), 0)],
+                params: vec![Identifier {
+                    ident: "val".to_owned(),
+                    token: Token::new(TokenType::Identifier("val".to_owned()), 0),
+                }],
                 results: RwLock::new(vec![]),
                 closure,
             }
@@ -599,18 +561,11 @@ mod tests {
 
     impl Fun for StoreFn {
         fn call(&self, interpreter: &mut Interpreter) -> Result<Types, InterpreterError> {
-            let iden = match &self.params.first().unwrap().token_type {
-                TokenType::Identifier(iden) => iden,
-                _ => {
-                    return Err(InterpreterError::InvalidFunctionBody(
-                        "something something".to_owned(),
-                    ));
-                }
-            };
+            let iden = &self.params.first().unwrap();
 
             let mut arr = self.results.write().unwrap();
 
-            arr.push(match interpreter.get_variable(&iden)? {
+            arr.push(match interpreter.get_variable(&iden.ident)? {
                 Types::Primitive(Literal::Number(num)) => num,
                 _ => {
                     return Err(InterpreterError::InvalidFunctionCall(
@@ -626,7 +581,7 @@ mod tests {
             "store"
         }
 
-        fn get_params(&self) -> &Vec<Token> {
+        fn get_params(&self) -> &Vec<Identifier> {
             &self.params
         }
 
@@ -701,7 +656,7 @@ fn test() { store(a); }
     }
 
     #[test]
-    fn closure_resolves_to_same_binding() -> Result<(), ProgramError> {
+    fn flosure_resolves_to_same_binding() -> Result<(), ProgramError> {
         let program = get_program_from_string(
             "
 let a = 1;

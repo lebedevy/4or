@@ -1,23 +1,26 @@
 use std::sync::{Arc, RwLock};
 
 use crate::{
-    InterpreterError,
     environment::Environment,
     interpreter::{function::Fun, types::Types},
+    parser::statement::Identifier,
     token::{Token, TokenType},
 };
 
 pub(crate) struct PrintFn {
-    params: Vec<Token>,
+    params: Vec<Identifier>,
     closure: Arc<RwLock<Environment>>,
 }
 
 impl PrintFn {
     pub(crate) fn new(closure: Arc<RwLock<Environment>>) -> Self {
         Self {
-            params: vec![Token {
-                token_type: TokenType::Identifier("value".to_owned()),
-                index: 0,
+            params: vec![Identifier {
+                ident: "value".to_owned(),
+                token: Token {
+                    token_type: TokenType::Identifier("value".to_owned()),
+                    index: 0,
+                },
             }],
             closure,
         }
@@ -29,21 +32,12 @@ impl Fun for PrintFn {
         &self,
         interpreter: &mut crate::interpreter::Interpreter,
     ) -> Result<Types, crate::InterpreterError> {
-        let param = match &self
+        let param = &self
             .get_params()
             .first()
-            .expect("Native print function not configured properly")
-            .token_type
-        {
-            TokenType::Identifier(iden) => iden,
-            _ => {
-                return Err(InterpreterError::InvalidFunctionCall(
-                    "Missing print 'value' parameter".to_owned(),
-                ));
-            }
-        };
+            .expect("Native print function not configured properly");
 
-        println!("{}", interpreter.get_variable(&param)?);
+        println!("{}", interpreter.get_variable(&param.ident)?);
 
         Ok(Types::Primitive(crate::parser::Literal::Nil))
     }
@@ -52,7 +46,7 @@ impl Fun for PrintFn {
         "print"
     }
 
-    fn get_params(&self) -> &Vec<Token> {
+    fn get_params(&self) -> &Vec<Identifier> {
         &self.params
     }
 

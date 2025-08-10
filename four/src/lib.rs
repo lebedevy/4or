@@ -54,7 +54,6 @@ impl ProgramError {
         if let Some(token) = match self {
             ProgramError::InterpreterError(interpreter_error) => match interpreter_error {
                 InterpreterError::InvalidUnary(token)
-                | InterpreterError::InvalidVariableIdentifier(token)
                 | InterpreterError::InvalidBinary(token)
                 | InterpreterError::InvalidLogicalOperator(token) => Some(token.clone()),
                 _ => None,
@@ -63,7 +62,6 @@ impl ProgramError {
             ProgramError::ParseError(parser_error) => match parser_error {
                 ParserError::UnexpectedToken(token, _) => token.clone(),
                 ParserError::InvalidPrimaryToken(token) => Some(token.clone()),
-                ParserError::ExpectedIdentifier(token) => token.clone(),
                 _ => None,
             },
         } {

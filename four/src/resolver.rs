@@ -10,9 +10,9 @@ impl Resolver {
     fn resolve_statement(&mut self, statement: Statement) {
         match statement {
             Statement::Expression(expression) => todo!(),
-            Statement::Variable(token, expression) => self.variable(),
+            Statement::Variable(token, expression) => todo!(), //self.variable(),
             Statement::Block(block) => self.block(block),
-            Statement::Function(token, tokens, block) => todo!(),
+            Statement::Function(ident, tokens, block) => todo!(),
             Statement::If(expression, statement, statement1) => todo!(),
             Statement::While(expression, statement) => todo!(),
             Statement::Return(token, statement) => todo!(),

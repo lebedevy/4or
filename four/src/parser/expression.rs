@@ -1,15 +1,15 @@
 use std::fmt::{Debug, Display};
 
-use crate::token::Token;
+use crate::{parser::statement::Identifier, token::Token};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Expression {
     Binary(Box<Expression>, Token, Box<Expression>),
     Grouping(Box<Expression>),
     Literal(Literal),
-    Variable(Token),
+    Variable(Identifier),
     Unary(Token, Box<Expression>),
-    Assignment(Token, Box<Expression>),
+    Assignment(Identifier, Box<Expression>),
     Logical(Box<Expression>, Token, Box<Expression>),
     Call(Box<Expression>, Vec<Expression>),
 }
