@@ -488,8 +488,6 @@ mod tests {
         sync::{Arc, RwLock},
     };
 
-    use leptos::prelude::RwSignal;
-
     use crate::{
         Parser, ParserError, ProgramError,
         environment::Environment,
@@ -592,7 +590,7 @@ mod tests {
     impl StoreFn {
         fn new(closure: Arc<RwLock<Environment>>) -> Self {
             Self {
-                params: vec![Identifier::new("val".to_owned(), 0)],
+                params: vec![Token::new(TokenType::Identifier("val".to_owned()), 0)],
                 results: RwLock::new(vec![]),
                 closure,
             }
