@@ -488,8 +488,6 @@ mod tests {
         sync::{Arc, RwLock},
     };
 
-    use leptos::prelude::RwSignal;
-
     use crate::{
         Parser, ParserError, ProgramError,
         environment::Environment,

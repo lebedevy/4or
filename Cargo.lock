@@ -183,6 +183,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.1.0"
+dependencies = [
+ "four",
+]
+
+[[package]]
 name = "const-str"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -374,11 +381,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "four_4or"
+name = "four"
 version = "0.1.0"
 dependencies = [
  "itertools",
- "leptos",
+ "token",
 ]
 
 [[package]]
@@ -1593,6 +1600,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "token"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "toml"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1833,6 +1848,14 @@ dependencies = [
  "sha2",
  "syn",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "web"
+version = "0.1.0"
+dependencies = [
+ "four",
+ "leptos",
 ]
 
 [[package]]

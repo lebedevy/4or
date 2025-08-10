@@ -4,7 +4,7 @@ use std::{
     process::exit,
 };
 
-use four_4or::{interpreter::Interpreter, run};
+use four::{interpreter::Interpreter, run};
 
 fn main() {
     // Skip the first argument which is tradtionally the path to the executable

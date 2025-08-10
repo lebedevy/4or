@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use crate::token::Token;
 
-use token::ReadFrom;
+use crate::scanner::token::ReadFrom;
 
 mod token;
 

@@ -96,3 +96,4 @@ impl Display for TokenType {
         Ok(())
     }
 }
+
