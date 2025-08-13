@@ -5,6 +5,7 @@ use itertools::min;
 use crate::{
     interpreter::{Interpreter, InterpreterError},
     parser::{Parser, ParserError},
+    resolver::Resolver,
     scanner::Scanner,
     token::Token,
 };
@@ -21,6 +22,9 @@ pub fn run(interpreter: &mut Interpreter, content: String) -> Result<(), Program
 
     let tokens = scanner.scan_tokens();
     let statements = Parser::parse(tokens.into_iter().peekable())?;
+
+    let mut resolver = Resolver::new();
+    resolver.resolve(&statements);
 
     interpreter.run(statements)?;
 
