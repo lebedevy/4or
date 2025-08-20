@@ -14,14 +14,14 @@ pub(crate) mod native;
 
 pub(crate) trait Fun {
     fn call(&self, interpreter: &mut Interpreter) -> Result<Types, InterpreterError>;
-    fn get_name(&self) -> &str;
+    fn get_name(&self) -> &Identifier;
     fn get_params(&self) -> &Vec<Identifier>;
     fn get_closure(&self) -> Arc<RwLock<Environment>>;
 }
 
 #[derive(Debug)]
 pub(super) struct UserFn {
-    pub(super) name: String,
+    pub(super) ident: Identifier,
     pub(super) params: Vec<Identifier>,
     pub(super) body: Block,
     pub(super) closure: Arc<RwLock<Environment>>,
@@ -29,13 +29,13 @@ pub(super) struct UserFn {
 
 impl UserFn {
     pub(super) fn new(
-        name: &str,
+        ident: Identifier,
         params: Vec<Identifier>,
         body: Block,
         closure: Arc<RwLock<Environment>>,
     ) -> Self {
         Self {
-            name: name.to_string(),
+            ident,
             params,
             body,
             closure,
@@ -54,8 +54,8 @@ impl Fun for UserFn {
         Ok(Types::Primitive(Literal::Nil))
     }
 
-    fn get_name(&self) -> &str {
-        &self.name
+    fn get_name(&self) -> &Identifier {
+        &self.ident
     }
 
     fn get_params(&self) -> &Vec<Identifier> {

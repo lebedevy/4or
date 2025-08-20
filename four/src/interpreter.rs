@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::Display,
     sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
@@ -6,10 +7,14 @@ use std::{
 use crate::{
     environment::{Environment, EnvironmentError},
     interpreter::{
-        function::{Fun, UserFn, native::PrintFn},
+        function::{
+            Fun, UserFn,
+            native::{PrintFn, get_statement_from_fn},
+        },
         types::{ReferenceTypes, Types},
     },
     parser::{Expression, Literal, Statement, statement::Identifier},
+    resolver::Resolver,
     token::{Token, TokenType},
 };
 
@@ -18,6 +23,7 @@ pub(crate) mod types;
 
 struct EnvironmentWrapper {
     environment: Option<Arc<RwLock<Environment>>>,
+    mapping: HashMap<usize, usize>,
 }
 
 impl EnvironmentWrapper {
@@ -26,6 +32,7 @@ impl EnvironmentWrapper {
 
         Self {
             environment: Some(env),
+            mapping: HashMap::new(),
         }
     }
 
@@ -44,9 +51,18 @@ impl EnvironmentWrapper {
         }
     }
 
-    fn assign(&mut self, name: &str, value: Types) -> Result<(), InterpreterError> {
+    fn assign(&mut self, ident: &Identifier, value: Types) -> Result<(), InterpreterError> {
+        let Some(distance) = self.mapping.get(&ident.global_id) else {
+            return Err(InterpreterError::EnvironmentError(format!(
+                "Missing variable distance mapping for assignment to variable '{}'",
+                ident.ident
+            )));
+        };
+
         match &mut self.environment {
-            Some(scope) => Ok(scope.write()?.assign(name, value)?),
+            Some(scope) => Ok(scope
+                .write()?
+                .assign(&ident.ident, value, distance.clone())?),
             None => {
                 return Err(InterpreterError::EnvironmentError(
                     "Missing current scope".to_owned(),
@@ -55,14 +71,19 @@ impl EnvironmentWrapper {
         }
     }
 
-    fn get(&self, name: &str) -> Result<Types, InterpreterError> {
+    fn get(&self, ident: &Identifier) -> Result<Types, InterpreterError> {
+        let Some(distance) = self.mapping.get(&ident.global_id) else {
+            return Err(InterpreterError::EnvironmentError(format!(
+                "Missing variable distance mapping for variable '{}'",
+                ident.ident,
+            )));
+        };
+
         match &self.environment {
-            Some(scope) => Ok(scope.read()?.get(name)?),
-            None => {
-                return Err(InterpreterError::EnvironmentError(
-                    "Missing current scope".to_owned(),
-                ));
-            }
+            Some(scope) => Ok(scope.read()?.get_at(&ident.ident, distance.clone())?),
+            None => Err(InterpreterError::EnvironmentError(
+                "Missing current scope".to_owned(),
+            )),
         }
     }
 
@@ -89,19 +110,40 @@ enum Return {
 }
 
 impl Interpreter {
-    pub fn new() -> Self {
-        let mut environment = EnvironmentWrapper::new();
+    pub fn new(resolver: &mut Resolver) -> Self {
+        let mut s = Self {
+            environment: EnvironmentWrapper::new(),
+        };
 
-        let print_fn = PrintFn::new(environment.get_closure_ref().unwrap());
+        s.import_standard_library(resolver);
 
-        environment
+        s
+    }
+
+    fn import_standard_library(&mut self, resolver: &mut Resolver) {
+        let func = PrintFn::new(self.environment.get_closure_ref().unwrap());
+
+        self.register_lib_fn(resolver, func);
+    }
+
+    fn register_lib_fn(&mut self, resolver: &mut Resolver, func: impl Fun + 'static) {
+        // 1. resolve function
+        // 2. define it in the local closure
+        resolver.resolve(
+            &vec![get_statement_from_fn(&func)],
+            &mut |id: usize, distance: usize| self.add_mapping(id, distance),
+        );
+
+        self.environment
             .define(
-                &print_fn.get_name().to_string(),
-                Types::Reference(ReferenceTypes::Function(Arc::new(print_fn))),
+                &func.get_name().ident.to_string(),
+                Types::Reference(ReferenceTypes::Function(Arc::new(func))),
             )
             .unwrap();
+    }
 
-        Self { environment }
+    pub(crate) fn add_mapping(&mut self, id: usize, depth: usize) {
+        self.environment.mapping.insert(id, depth);
     }
 
     pub(super) fn run(&mut self, statements: Vec<Statement>) -> Result<(), InterpreterError> {
@@ -180,7 +222,7 @@ impl Interpreter {
                 self.environment.define(
                     &name.ident,
                     Types::Reference(ReferenceTypes::Function(Arc::new(UserFn::new(
-                        &name.ident,
+                        name.clone(),
                         params,
                         body.clone(),
                         self.environment.get_closure_ref()?,
@@ -339,7 +381,7 @@ impl Interpreter {
     }
 
     fn variable(&mut self, ident: &Identifier) -> Result<Types, InterpreterError> {
-        Ok(self.environment.get(&ident.ident)?)
+        Ok(self.environment.get(ident)?)
     }
 
     fn assign(
@@ -349,7 +391,7 @@ impl Interpreter {
     ) -> Result<Types, InterpreterError> {
         let value = self.evaluate(expression)?;
 
-        self.environment.assign(&ident.ident, value.clone())?;
+        self.environment.assign(ident, value.clone())?;
 
         Ok(value)
     }
@@ -427,8 +469,8 @@ impl Interpreter {
         self.evaluate(expression)
     }
 
-    fn get_variable(&mut self, name: &str) -> Result<Types, InterpreterError> {
-        Ok(self.environment.get(name)?)
+    fn get_variable(&mut self, ident: &Identifier) -> Result<Types, InterpreterError> {
+        Ok(self.environment.get(ident)?)
     }
 }
 
@@ -455,11 +497,35 @@ mod tests {
             types::{ReferenceTypes, Types},
         },
         parser::{Expression, Literal, Statement, statement::Identifier},
+        resolver::Resolver,
         scanner::Scanner,
         token::{Token, TokenType},
     };
 
     use super::{Interpreter, InterpreterError};
+
+    struct TestEnv {
+        interpreter: Interpreter,
+        resolver: Resolver,
+        store_fn: StoreFn,
+    }
+
+    impl TestEnv {
+        fn new() -> Self {
+            let mut resolver = Resolver::new();
+            let mut interpreter = Interpreter::new(&mut resolver);
+
+            let store_fn = StoreFn::new(interpreter.environment.get_closure_ref().unwrap());
+
+            interpreter.register_lib_fn(&mut resolver, store_fn.clone());
+
+            Self {
+                interpreter,
+                resolver,
+                store_fn,
+            }
+        }
+    }
 
     fn get_num_exp(num: f64) -> Expression {
         Expression::Literal(Literal::Number(num))
@@ -492,7 +558,7 @@ mod tests {
         ];
 
         for (left, token, right, expected) in operations {
-            let result = Interpreter::new().binary(
+            let result = TestEnv::new().interpreter.binary(
                 &get_num_exp(left),
                 &get_token(token),
                 &get_num_exp(right),
@@ -522,9 +588,16 @@ mod tests {
 
     #[test]
     fn fn_call_resets_closure() -> Result<(), ProgramError> {
+        let mut test_env = TestEnv::new();
+        let mut interpreter = test_env.interpreter;
+
         let program = get_program_from_string("let a = 1; fn test() { print(a); } test();")?;
 
-        let mut interpreter = Interpreter::new();
+        test_env
+            .resolver
+            .resolve(&program, &mut |id: usize, distance: usize| {
+                interpreter.add_mapping(id, distance)
+            });
 
         let env = interpreter.environment.get_closure_ref()?;
 
@@ -540,20 +613,25 @@ mod tests {
         Ok(())
     }
 
+    #[derive(Clone)]
     struct StoreFn {
+        ident: Identifier,
         params: Vec<Identifier>,
-        results: RwLock<Vec<f64>>,
+        results: Arc<RwLock<Vec<f64>>>,
         closure: Arc<RwLock<Environment>>,
     }
 
     impl StoreFn {
         fn new(closure: Arc<RwLock<Environment>>) -> Self {
+            let name = "store".to_owned();
+            let param = "val";
             Self {
-                params: vec![Identifier {
-                    ident: "val".to_owned(),
-                    token: Token::new(TokenType::Identifier("val".to_owned()), 0),
-                }],
-                results: RwLock::new(vec![]),
+                ident: Identifier::new(&name, Token::new(TokenType::Identifier(name.clone()), 0)),
+                params: vec![Identifier::new(
+                    param,
+                    Token::new(TokenType::Identifier(param.to_owned()), 0),
+                )],
+                results: Arc::new(RwLock::new(vec![])),
                 closure,
             }
         }
@@ -565,7 +643,7 @@ mod tests {
 
             let mut arr = self.results.write().unwrap();
 
-            arr.push(match interpreter.get_variable(&iden.ident)? {
+            arr.push(match interpreter.get_variable(&iden)? {
                 Types::Primitive(Literal::Number(num)) => num,
                 _ => {
                     return Err(InterpreterError::InvalidFunctionCall(
@@ -577,8 +655,8 @@ mod tests {
             Ok(Types::Primitive(Literal::Nil))
         }
 
-        fn get_name(&self) -> &str {
-            "store"
+        fn get_name(&self) -> &Identifier {
+            &self.ident
         }
 
         fn get_params(&self) -> &Vec<Identifier> {
@@ -601,16 +679,17 @@ fn test() { store(a); }
         ",
         )?;
 
-        let mut interpreter = Interpreter::new();
-        let store_fn = Arc::new(StoreFn::new(interpreter.environment.get_closure_ref()?));
-        interpreter.environment.define(
-            store_fn.get_name(),
-            Types::Reference(ReferenceTypes::Function(store_fn.clone())),
-        )?;
+        let mut env = TestEnv::new();
+        let mut interpreter = env.interpreter;
+
+        env.resolver
+            .resolve(&program, &mut |id: usize, distance: usize| {
+                interpreter.add_mapping(id, distance)
+            });
 
         interpreter.run(program)?;
 
-        let actual = store_fn.results.read().unwrap();
+        let actual = env.store_fn.results.read().unwrap();
         let expected = vec![1_f64, 2_f64];
 
         assert!(
@@ -633,16 +712,17 @@ fn test() { store(a); }
         ",
         )?;
 
-        let mut interpreter = Interpreter::new();
-        let store_fn = Arc::new(StoreFn::new(interpreter.environment.get_closure_ref()?));
-        interpreter.environment.define(
-            store_fn.get_name(),
-            Types::Reference(ReferenceTypes::Function(store_fn.clone())),
-        )?;
+        let mut env = TestEnv::new();
+        let mut interpreter = env.interpreter;
+
+        env.resolver
+            .resolve(&program, &mut |id: usize, distance: usize| {
+                interpreter.add_mapping(id, distance)
+            });
 
         interpreter.run(program)?;
 
-        let actual = store_fn.results.read().unwrap();
+        let actual = env.store_fn.results.read().unwrap();
         let expected = vec![2_f64, 1_f64];
 
         assert!(
@@ -656,7 +736,7 @@ fn test() { store(a); }
     }
 
     #[test]
-    fn flosure_resolves_to_same_binding() -> Result<(), ProgramError> {
+    fn closure_resolves_to_same_binding() -> Result<(), ProgramError> {
         let program = get_program_from_string(
             "
 let a = 1;
@@ -672,16 +752,45 @@ let a = 1;
         ",
         )?;
 
-        let mut interpreter = Interpreter::new();
-        let store_fn = Arc::new(StoreFn::new(interpreter.environment.get_closure_ref()?));
-        interpreter.environment.define(
-            store_fn.get_name(),
-            Types::Reference(ReferenceTypes::Function(store_fn.clone())),
-        )?;
+        let mut env = TestEnv::new();
+        let mut interpreter = env.interpreter;
+
+        env.resolver
+            .resolve(&program, &mut |id: usize, distance: usize| {
+                interpreter.add_mapping(id, distance)
+            });
 
         interpreter.run(program)?;
 
-        let actual = store_fn.results.read().unwrap();
+        let actual = env.store_fn.results.read().unwrap();
+        let expected = vec![1_f64, 1_f64];
+
+        assert!(
+            itertools::equal(expected.iter(), actual.iter()),
+            "Expected '{:?}' got '{:?}'",
+            expected,
+            actual
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "This will take some work"] // TODO
+    fn redeclaration_doesnt_affect_binding() -> Result<(), ProgramError> {
+        let program = get_program_from_string("let a = 1; fn test() { print(a); } let a = 2;")?;
+
+        let mut env = TestEnv::new();
+        let mut interpreter = env.interpreter;
+
+        env.resolver
+            .resolve(&program, &mut |id: usize, distance: usize| {
+                interpreter.add_mapping(id, distance)
+            });
+
+        interpreter.run(program)?;
+
+        let actual = env.store_fn.results.read().unwrap();
         let expected = vec![1_f64, 1_f64];
 
         assert!(

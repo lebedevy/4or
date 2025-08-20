@@ -25,7 +25,7 @@ pub(crate) enum ReferenceTypes {
 impl Debug for ReferenceTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReferenceTypes::Function(fun) => write!(f, "Fn '{}' reference", fun.get_name()),
+            ReferenceTypes::Function(fun) => write!(f, "Fn '{}' reference", fun.get_name().ident),
         }
     }
 }
@@ -33,7 +33,7 @@ impl Debug for ReferenceTypes {
 impl Display for ReferenceTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReferenceTypes::Function(func) => write!(f, "Fn '{}' reference", func.get_name()),
+            ReferenceTypes::Function(func) => write!(f, "Fn '{}' reference", func.get_name().ident),
         }
     }
 }

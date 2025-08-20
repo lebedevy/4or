@@ -13,18 +13,23 @@ use crate::{
 pub(crate) mod environment;
 pub mod interpreter;
 pub(crate) mod parser;
-pub(crate) mod resolver;
+pub mod resolver;
 pub(crate) mod scanner;
 pub(crate) mod token;
 
-pub fn run(interpreter: &mut Interpreter, content: String) -> Result<(), ProgramError> {
+pub fn run(
+    interpreter: &mut Interpreter,
+    resolver: &mut Resolver,
+    content: String,
+) -> Result<(), ProgramError> {
     let mut scanner = Scanner::new(content);
 
     let tokens = scanner.scan_tokens();
     let statements = Parser::parse(tokens.into_iter().peekable())?;
 
-    let mut resolver = Resolver::new();
-    resolver.resolve(&statements);
+    resolver.resolve(&statements, &mut |id: usize, distance: usize| {
+        interpreter.add_mapping(id, distance)
+    });
 
     interpreter.run(statements)?;
 

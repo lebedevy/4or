@@ -32,25 +32,36 @@ impl Environment {
         Ok(())
     }
 
-    pub(super) fn assign(&mut self, name: &str, value: Types) -> Result<(), EnvironmentError> {
-        if self.scope.contains_key(name) {
-            self.scope.insert(name.to_string(), value);
-            return Ok(());
-        };
+    pub(super) fn assign(
+        &mut self,
+        name: &str,
+        value: Types,
+        distance: usize,
+    ) -> Result<(), EnvironmentError> {
+        if distance == 0 {
+            if self.scope.contains_key(name) {
+                self.scope.insert(name.to_string(), value);
+                return Ok(());
+            }
+            return Err(EnvironmentError::UndefinedVariable(name.to_string()));
+        }
 
         match &mut self.closure {
-            Some(closure) => Ok(closure.write()?.assign(name, value)?),
+            Some(closure) => Ok(closure.write()?.assign(name, value, distance - 1)?),
             None => Err(EnvironmentError::UndefinedVariable(name.to_string())),
         }
     }
 
-    pub(super) fn get(&self, name: &str) -> Result<Types, EnvironmentError> {
-        if let Some(val) = self.scope.get(name) {
-            return Ok(val.clone());
+    pub(super) fn get_at(&self, name: &str, distance: usize) -> Result<Types, EnvironmentError> {
+        if distance == 0 {
+            if let Some(val) = self.scope.get(name) {
+                return Ok(val.clone());
+            }
+            return Err(EnvironmentError::UndefinedVariable(name.to_string()));
         }
 
         match &self.closure {
-            Some(closure) => closure.read()?.get(name),
+            Some(closure) => closure.read()?.get_at(name, distance - 1),
             None => Err(EnvironmentError::UndefinedVariable(name.to_string())),
         }
     }

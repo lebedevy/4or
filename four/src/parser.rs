@@ -122,7 +122,7 @@ impl Parser {
         if Parser::match_next(tokens, &vec![TokenType::RightParen]).is_none() {
             loop {
                 let (token, ident) = Parser::expect_identifier(tokens)?;
-                args.push(Identifier { ident, token });
+                args.push(Identifier::new(&ident, token));
 
                 if args.len() >= 255 {
                     return Err(ParserError::TooManyParameters(match tokens.peek() {
@@ -141,7 +141,11 @@ impl Parser {
 
         let body = Parser::block(tokens)?;
 
-        Ok(Statement::Function(Identifier { ident, token }, args, body))
+        Ok(Statement::Function(
+            Identifier::new(&ident, token),
+            args,
+            body,
+        ))
     }
 
     fn for_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -252,7 +256,7 @@ impl Parser {
 
         Parser::expect_match(tokens, TokenType::Semicolon)?;
 
-        Ok(Statement::Variable(Identifier { ident, token }, initial))
+        Ok(Statement::Variable(Identifier::new(&ident, token), initial))
     }
 
     fn expression_statement(tokens: &mut Peek) -> Result<Statement, ParserError> {
@@ -398,10 +402,9 @@ impl Parser {
                 TokenType::Nil => Expression::Literal(Literal::Nil),
                 TokenType::Number(num) => Expression::Literal(Literal::Number(num.clone())),
                 TokenType::String(str) => Expression::Literal(Literal::String(str.clone())),
-                TokenType::Identifier(ident) => Expression::Variable(Identifier {
-                    ident: ident.clone(),
-                    token,
-                }),
+                TokenType::Identifier(ident) => {
+                    Expression::Variable(Identifier::new(ident, token.clone()))
+                }
                 TokenType::LeftParen => {
                     let expr = Parser::expression(tokens)?;
                     Parser::expect_match(tokens, TokenType::RightParen)?;

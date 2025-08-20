@@ -4,7 +4,7 @@ use std::{
     process::exit,
 };
 
-use four::{interpreter::Interpreter, run};
+use four::{interpreter::Interpreter, resolver::Resolver, run};
 
 fn main() {
     // Skip the first argument which is tradtionally the path to the executable
@@ -21,7 +21,8 @@ fn main() {
 }
 
 fn run_prompt() {
-    let mut interpreter = Interpreter::new();
+    let mut resolver = Resolver::new();
+    let mut interpreter = Interpreter::new(&mut resolver);
     loop {
         print!("> ");
         io::stdout().flush().expect("Failed to write to console");
@@ -31,7 +32,7 @@ fn run_prompt() {
             break;
         }
 
-        if let Err(err) = run(&mut interpreter, input.clone()) {
+        if let Err(err) = run(&mut interpreter, &mut resolver, input.clone()) {
             eprintln!("{}", err.get_error_text(&input));
         }
     }
@@ -39,7 +40,8 @@ fn run_prompt() {
 
 fn run_file(path: &String) {
     let content = std::fs::read_to_string(path);
-    let mut interpreter = Interpreter::new();
+    let mut resolver = Resolver::new();
+    let mut interpreter = Interpreter::new(&mut resolver);
 
     let content = match content {
         Ok(content) => content,
@@ -49,7 +51,7 @@ fn run_file(path: &String) {
         }
     };
 
-    match run(&mut interpreter, content) {
+    match run(&mut interpreter, &mut resolver, content) {
         Ok(_) => {
             return;
         }

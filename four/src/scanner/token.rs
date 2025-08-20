@@ -181,7 +181,7 @@ impl Token {
     fn consume_identifier(iter: &mut I, start: char) -> TokenType {
         let mut text = String::from(start);
 
-        while let Some((_, ch)) = Token::next_if(iter, |_, ch| ch.is_alphanumeric()) {
+        while let Some((_, ch)) = Token::next_if(iter, |_, ch| ch.is_alphanumeric() || ch == &'_') {
             text.push(ch);
         }
 
@@ -519,6 +519,13 @@ mod tests {
     fn from_identifier() -> Result<(), TokenParseError> {
         let res = Token::from(&mut get_iter("aa bb"))?;
         assert_eq!(res, Some((0, TokenType::Identifier("aa".to_string()))));
+        Ok(())
+    }
+
+    #[test]
+    fn from_identifier_with_underscore() -> Result<(), TokenParseError> {
+        let res = Token::from(&mut get_iter("aa_bb"))?;
+        assert_eq!(res, Some((0, TokenType::Identifier("aa_bb".to_string()))));
         Ok(())
     }
 

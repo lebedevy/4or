@@ -1,4 +1,4 @@
-use four::{interpreter::Interpreter, run};
+use four::{interpreter::Interpreter, resolver::Resolver, run};
 use leptos::{ev::KeyboardEvent, logging::log, prelude::*};
 
 const PREFIX: &str = ">  ";
@@ -11,7 +11,8 @@ fn main() {
 fn App() -> impl IntoView {
     let ignore = vec!["Shift", "Alt", "CapsLock", "Escape", "Control"];
 
-    let mut interpreter = Interpreter::new();
+    let mut resolver = Resolver::new();
+    let mut interpreter = Interpreter::new(&mut resolver);
     let (input, set_input) = signal("".to_owned());
     let (history, set_history) = signal(Vec::<String>::new());
 
@@ -21,7 +22,7 @@ fn App() -> impl IntoView {
                 let input = input.get();
                 let mut history = set_history.write();
                 (*history).push(input.clone());
-                if let Err(err) = run(&mut interpreter, input.clone()) {
+                if let Err(err) = run(&mut interpreter, &mut resolver, input.clone()) {
                     let err = err.get_error_text(&input);
                     history.append(&mut err.lines().map(|x| x.to_string()).collect());
                 }
