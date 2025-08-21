@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
-use crate::parser::{
-    Expression, Statement,
-    statement::{Block, Identifier},
+use crate::{
+    parser::{
+        Expression, Statement,
+        statement::{Block, Identifier},
+    },
+    token::Token,
 };
 
 pub struct Resolver {
@@ -23,17 +26,19 @@ impl Resolver {
         &mut self,
         statements: &Vec<Statement>,
         register_mapping: &mut impl FnMut(usize, usize),
-    ) {
+    ) -> Result<(), ResolverError> {
         for statement in statements {
-            self.resolve_statement(statement, register_mapping);
+            self.resolve_statement(statement, register_mapping)?;
         }
+
+        Ok(())
     }
 
     fn resolve_statement(
         &mut self,
         statement: &Statement,
         register_mapping: &mut impl FnMut(usize, usize),
-    ) {
+    ) -> Result<(), ResolverError> {
         match statement {
             Statement::Expression(expression) => {
                 self.resolve_expression(expression, register_mapping)
@@ -46,29 +51,36 @@ impl Resolver {
                 self.function(ident, parameters, body, register_mapping)
             }
             Statement::If(condition, then_branch, else_branch) => {
-                self.resolve_expression(condition, register_mapping);
-                self.resolve_statement(then_branch, register_mapping);
+                self.resolve_expression(condition, register_mapping)?;
+                self.resolve_statement(then_branch, register_mapping)?;
                 if let Some(else_branch) = else_branch {
-                    self.resolve_statement(else_branch, register_mapping);
+                    self.resolve_statement(else_branch, register_mapping)?;
                 }
+                Ok(())
             }
             Statement::While(condition, statement) => {
-                self.resolve_expression(condition, register_mapping);
-                self.resolve_statement(statement, register_mapping);
-            }
-            Statement::Return(_token, statement) => {
+                self.resolve_expression(condition, register_mapping)?;
                 self.resolve_statement(statement, register_mapping)
+            }
+            Statement::Return(token, statement) => {
+                self.return_statement(token, statement, register_mapping)
             }
         }
     }
 
     /// Block statement: introduces new scope
-    fn block(&mut self, block: &Block, register_mapping: &mut impl FnMut(usize, usize)) {
+    fn block(
+        &mut self,
+        block: &Block,
+        register_mapping: &mut impl FnMut(usize, usize),
+    ) -> Result<(), ResolverError> {
         self.begin_scope();
         for statement in block.statements.iter() {
-            self.resolve_statement(statement, register_mapping);
+            self.resolve_statement(statement, register_mapping)?;
         }
         self.end_scope();
+
+        Ok(())
     }
 
     /// function declaration: introduces new scope for its body; binds parameters to that scope
@@ -78,23 +90,25 @@ impl Resolver {
         parameters: &Vec<Identifier>,
         body: &Block,
         register_mapping: &mut impl FnMut(usize, usize),
-    ) {
+    ) -> Result<(), ResolverError> {
         self.declare(&ident.ident);
-        self.define(&ident.ident);
+        self.define(&ident)?;
 
         // TODO: This might have to be split to resolve class methods later
         self.begin_scope();
         for ident in parameters {
             self.declare(&ident.ident);
-            self.define(&ident.ident);
+            self.define(&ident)?;
             // This is necessary for native functions, since we don't explicitly resolve the body
             // TODO: investigate further
-            self.resolve_local(ident, register_mapping);
+            self.resolve_local(ident, register_mapping)?;
         }
         for statement in &body.statements {
-            self.resolve_statement(statement, register_mapping);
+            self.resolve_statement(statement, register_mapping)?;
         }
         self.end_scope();
+
+        Ok(())
     }
 
     /// variable declaration: add new variable to current scope
@@ -103,12 +117,30 @@ impl Resolver {
         ident: &Identifier,
         expression: &Option<Expression>,
         register_mapping: &mut impl FnMut(usize, usize),
-    ) {
+    ) -> Result<(), ResolverError> {
         self.declare(&ident.ident);
         if let Some(expression) = expression {
-            self.resolve_expression(expression, register_mapping);
-            self.define(&ident.ident);
+            self.resolve_expression(expression, register_mapping)?;
+            self.define(&ident)?;
         }
+        Ok(())
+    }
+
+    fn return_statement(
+        &mut self,
+        token: &Token,
+        statement: &Statement,
+        register_mapping: &mut impl FnMut(usize, usize),
+    ) -> Result<(), ResolverError> {
+        // Attempting to return from the global scope
+        if self.scopes.len() == 0 {
+            return Err(ResolverError::Error(
+                token.clone(),
+                "Attempting to return from the global scope".into(),
+            ));
+        }
+
+        self.resolve_statement(statement, register_mapping)
     }
 
     /// variable and assignment expressions: need to resolve their variables
@@ -117,16 +149,16 @@ impl Resolver {
         &mut self,
         expression: &Expression,
         register_mapping: &mut impl FnMut(usize, usize),
-    ) {
+    ) -> Result<(), ResolverError> {
         match expression {
             Expression::Binary(left, _token, right) => {
-                self.resolve_expression(left, register_mapping);
-                self.resolve_expression(right, register_mapping);
+                self.resolve_expression(left, register_mapping)?;
+                self.resolve_expression(right, register_mapping)
             }
             Expression::Grouping(expression) => {
                 self.resolve_expression(expression, register_mapping)
             }
-            Expression::Literal(_literal) => (),
+            Expression::Literal(_literal) => Ok(()),
             Expression::Variable(ident) => self.resolve_local(&ident, register_mapping),
             Expression::Unary(_token, expression) => {
                 self.resolve_expression(expression, register_mapping)
@@ -135,14 +167,15 @@ impl Resolver {
                 self.assignment_expression(ident, expression, register_mapping)
             }
             Expression::Logical(left, _token, right) => {
-                self.resolve_expression(left, register_mapping);
-                self.resolve_expression(right, register_mapping);
+                self.resolve_expression(left, register_mapping)?;
+                self.resolve_expression(right, register_mapping)
             }
             Expression::Call(callee, arguments) => {
-                self.resolve_expression(callee, register_mapping);
+                self.resolve_expression(callee, register_mapping)?;
                 for argument in arguments {
-                    self.resolve_expression(argument, register_mapping);
+                    self.resolve_expression(argument, register_mapping)?;
                 }
+                Ok(())
             }
         }
     }
@@ -152,9 +185,9 @@ impl Resolver {
         ident: &Identifier,
         expression: &Box<Expression>,
         register_mapping: &mut impl FnMut(usize, usize) -> (),
-    ) {
-        self.resolve_expression(expression, register_mapping);
-        self.resolve_local(&ident, register_mapping);
+    ) -> Result<(), ResolverError> {
+        self.resolve_expression(expression, register_mapping)?;
+        self.resolve_local(&ident, register_mapping)
     }
 
     // scope management
@@ -162,13 +195,18 @@ impl Resolver {
         &mut self,
         ident: &Identifier,
         register_mapping: &mut impl FnMut(usize, usize) -> (),
-    ) {
+    ) -> Result<(), ResolverError> {
         for (depth, scope) in self.scopes.iter().rev().enumerate() {
             if scope.contains_key(&ident.ident) {
                 register_mapping(ident.global_id, depth);
-                break;
+                return Ok(());
             }
         }
+
+        return Err(ResolverError::Error(
+            ident.token.clone(),
+            format!("Unknown identifier '{}'", ident.ident),
+        ));
     }
 
     fn declare(&mut self, name: &str) {
@@ -178,15 +216,25 @@ impl Resolver {
             .insert(name.to_string(), false);
     }
 
-    fn define(&mut self, name: &str) {
-        let val = self
+    fn define(&mut self, ident: &Identifier) -> Result<(), ResolverError> {
+        match self
             .scopes
             .last_mut()
             .expect("Missing scope")
-            .get_mut(name)
-            .expect("Missing variable");
-
-        *val = false;
+            .get_mut(&ident.ident)
+        {
+            Some(val) => {
+                *val = false;
+                Ok(())
+            }
+            None => Err(ResolverError::Error(
+                ident.token.clone(),
+                format!(
+                    "Attempting to assign to undeclared variable '{}'",
+                    ident.ident
+                ),
+            )),
+        }
     }
 
     fn begin_scope(&mut self) {
@@ -198,12 +246,16 @@ impl Resolver {
     }
 }
 
+pub(super) enum ResolverError {
+    Error(Token, String),
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Index;
 
     use crate::{
-        Parser, ParserError,
+        Parser, ParserError, ProgramError,
         parser::{Expression, Statement},
         resolver::Resolver,
         scanner::Scanner,
@@ -216,12 +268,12 @@ mod tests {
     }
 
     #[test]
-    fn tracks_declarations() -> Result<(), ParserError> {
+    fn tracks_declarations() -> Result<(), ProgramError> {
         let program = "let a = 1; let b = a;";
         let program = get_program_from_string(program)?;
         let mut resolver = Resolver::new();
 
-        resolver.resolve(&program, &mut |_id, _distance| {});
+        resolver.resolve(&program, &mut |_id, _distance| {})?;
 
         assert!(resolver.scopes.first().unwrap().contains_key("a"));
         assert!(resolver.scopes.first().unwrap().contains_key("b"));
@@ -230,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_declaration() -> Result<(), ParserError> {
+    fn resolves_declaration() -> Result<(), ProgramError> {
         let program = "let a = 1; let b = a;";
         let program = get_program_from_string(program)?;
         let mut resolver = Resolver::new();
@@ -247,7 +299,7 @@ mod tests {
             println!("Mapping: {} {}", id, distance);
             id = var_id;
             called = true;
-        });
+        })?;
 
         assert!(called, "Did not map variable");
         assert_eq!(
@@ -263,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_function() -> Result<(), ParserError> {
+    fn resolves_function() -> Result<(), ProgramError> {
         let program = "fn test() {} test();";
         let program = get_program_from_string(program)?;
         let mut resolver = Resolver::new();
@@ -283,7 +335,7 @@ mod tests {
             println!("Mapping: {} {}", id, distance);
             id = var_id;
             called = true;
-        });
+        })?;
 
         assert!(called, "Did not map variable");
         assert_eq!(
@@ -299,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_function_params() -> Result<(), ParserError> {
+    fn resolves_function_params() -> Result<(), ProgramError> {
         let program = "fn test(a) {} test(1);";
         let program = get_program_from_string(program)?;
         let mut resolver = Resolver::new();
@@ -318,7 +370,7 @@ mod tests {
         resolver.resolve(&program, &mut |var_id, _| {
             id = var_id;
             called = true;
-        });
+        })?;
 
         assert!(called, "Did not map variable");
         assert_eq!(
@@ -334,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_nested_call() -> Result<(), ParserError> {
+    fn resolves_nested_call() -> Result<(), ProgramError> {
         let program = "
 fn test() {}
 fn test_2() { test(); }
@@ -361,7 +413,7 @@ fn test_2() { test(); }
         resolver.resolve(&program, &mut |_, var_distance| {
             distance = var_distance;
             called = true;
-        });
+        })?;
 
         assert!(called, "Did not map variable");
         assert_eq!(

@@ -5,7 +5,7 @@ use itertools::min;
 use crate::{
     interpreter::{Interpreter, InterpreterError},
     parser::{Parser, ParserError},
-    resolver::Resolver,
+    resolver::{Resolver, ResolverError},
     scanner::Scanner,
     token::Token,
 };
@@ -29,7 +29,7 @@ pub fn run(
 
     resolver.resolve(&statements, &mut |id: usize, distance: usize| {
         interpreter.add_mapping(id, distance)
-    });
+    })?;
 
     interpreter.run(statements)?;
 
@@ -40,6 +40,7 @@ pub fn run(
 pub enum ProgramError {
     InterpreterError(InterpreterError),
     ParseError(ParserError),
+    Error(Token, String),
 }
 
 fn get_token_error_text(input: &str, token: &Token) -> String {
@@ -67,12 +68,12 @@ impl ProgramError {
                 | InterpreterError::InvalidLogicalOperator(token) => Some(token.clone()),
                 _ => None,
             },
-            // TODO
             ProgramError::ParseError(parser_error) => match parser_error {
                 ParserError::UnexpectedToken(token, _) => token.clone(),
                 ParserError::InvalidPrimaryToken(token) => Some(token.clone()),
                 _ => None,
             },
+            ProgramError::Error(token, _) => Some(token.clone()),
         } {
             error = get_token_error_text(input, &token);
         }
@@ -89,6 +90,7 @@ impl Display for ProgramError {
                 write!(f, "Program error - {}", interpreter_error)?
             }
             ProgramError::ParseError(parser_error) => write!(f, "{}", parser_error)?,
+            ProgramError::Error(_token, message) => write!(f, "{}", message)?,
         };
 
         Ok(())
@@ -104,5 +106,13 @@ impl From<InterpreterError> for ProgramError {
 impl From<ParserError> for ProgramError {
     fn from(value: ParserError) -> Self {
         Self::ParseError(value)
+    }
+}
+
+impl From<ResolverError> for ProgramError {
+    fn from(value: ResolverError) -> Self {
+        match value {
+            ResolverError::Error(token, message) => Self::Error(token, message),
+        }
     }
 }
